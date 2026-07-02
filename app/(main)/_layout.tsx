@@ -1,7 +1,11 @@
 import { Tabs } from 'expo-router'
+import { useEffect } from 'react'
+import { AppState } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { C } from '../../lib/theme'
+import { supabase } from '../../lib/supabase'
 import Svg, { Path } from 'react-native-svg'
+import IncomingCallMobile from '../../components/IncomingCallMobile'
 
 function CompassIcon({ color }: { color: string }) {
   return <Svg width={22} height={22} viewBox="0 0 24 24" fill={color}>
@@ -27,29 +31,60 @@ function GearIcon({ color }: { color: string }) {
 export default function MainLayout() {
   const insets = useSafeAreaInsets()
 
+  useEffect(() => {
+    const setOnline = async (online: boolean) => {
+      let user = null
+      for (let i = 0; i < 3; i++) {
+        const { data } = await supabase.auth.getUser()
+        if (data?.user) { user = data.user; break }
+        await new Promise(r => setTimeout(r, 500))
+      }
+      if (!user) return
+      const { error } = await supabase.from('profiles').update({ online }).eq('id', user.id)
+      if (error) console.log('setOnline error:', error.message)
+    }
+
+    setOnline(true)
+
+    const sub = AppState.addEventListener('change', async state => {
+      if (state !== 'active') {
+        await setOnline(false)
+      } else {
+        await setOnline(true)
+      }
+    })
+
+    return () => {
+      sub.remove()
+    }
+  }, [])
+
   return (
-    <Tabs screenOptions={{
-      headerShown: false,
-      tabBarStyle: {
-        backgroundColor: C.card,
-        borderTopColor: C.border,
-        borderTopWidth: 1,
-        height: 60 + insets.bottom,
-        paddingBottom: insets.bottom + 6,
-        paddingTop: 8,
-      },
-      tabBarActiveTintColor: C.rose,
-      tabBarInactiveTintColor: C.muted,
-      tabBarLabelStyle: { fontFamily: 'Outfit_500Medium', fontSize: 11 },
-    }}>
-      <Tabs.Screen name="home"     options={{ title: 'Discover', tabBarIcon: ({ color }) => <CompassIcon color={color}/> }}/>
-      <Tabs.Screen name="credits"  options={{ title: 'Sparks',   tabBarIcon: ({ color }) => <BoltIcon color={color}/> }}/>
-      <Tabs.Screen name="premium"  options={{ title: 'Premium',  tabBarIcon: ({ color }) => <StarIcon color={color}/> }}/>
-      <Tabs.Screen name="settings" options={{ title: 'Settings', tabBarIcon: ({ color }) => <GearIcon color={color}/> }}/>
-      <Tabs.Screen name="profile/[id]" options={{ href: null }}/>
-      <Tabs.Screen name="chat/[id]"    options={{ href: null }}/>
-      <Tabs.Screen name="call/[id]"    options={{ href: null }}/>
-      <Tabs.Screen name="review/[id]"  options={{ href: null }}/>
-    </Tabs>
+    <>
+      <IncomingCallMobile/>
+      <Tabs screenOptions={{
+        headerShown: false,
+        tabBarStyle: {
+          backgroundColor: C.card,
+          borderTopColor: C.border,
+          borderTopWidth: 1,
+          height: 60 + insets.bottom,
+          paddingBottom: insets.bottom + 6,
+          paddingTop: 8,
+        },
+        tabBarActiveTintColor: C.rose,
+        tabBarInactiveTintColor: C.muted,
+        tabBarLabelStyle: { fontFamily: 'Outfit_500Medium', fontSize: 11 },
+      }}>
+        <Tabs.Screen name="home"     options={{ title: 'Discover', tabBarIcon: ({ color }) => <CompassIcon color={color}/> }}/>
+        <Tabs.Screen name="credits"  options={{ title: 'Sparks',   tabBarIcon: ({ color }) => <BoltIcon color={color}/> }}/>
+        <Tabs.Screen name="premium"  options={{ title: 'Premium',  tabBarIcon: ({ color }) => <StarIcon color={color}/> }}/>
+        <Tabs.Screen name="settings" options={{ title: 'Settings', tabBarIcon: ({ color }) => <GearIcon color={color}/> }}/>
+        <Tabs.Screen name="profile/[id]" options={{ href: null, tabBarStyle: { display: 'none' } }}/>
+        <Tabs.Screen name="chat/[id]"    options={{ href: null, tabBarStyle: { display: 'none' } }}/>
+        <Tabs.Screen name="call/[id]"    options={{ href: null, tabBarStyle: { display: 'none' } }}/>
+        <Tabs.Screen name="review/[id]"  options={{ href: null, tabBarStyle: { display: 'none' } }}/>
+      </Tabs>
+    </>
   )
 }
