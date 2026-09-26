@@ -19,10 +19,9 @@ type CallPhase = 'calling' | 'accepted' | 'rejected' | 'timeout'
 export default function CallScreen() {
   const router  = useRouter()
   const insets  = useSafeAreaInsets()
-  const { id, callerCredits, callerPremium } = useLocalSearchParams<{
-    id: string; callerCredits?: string; callerPremium?: string
+const { id, callerCredits, callerPremium, isHost, callId: routeCallId, roomUrl: routeRoomUrl } = useLocalSearchParams<{
+    id: string; callerCredits?: string; callerPremium?: string; isHost?: string; callId?: string; roomUrl?: string
   }>()
-
   const initialized = useRef(false)
   const navigating  = useRef(false)
   const webViewRef  = useRef<WebView>(null)
@@ -51,6 +50,7 @@ export default function CallScreen() {
   const [messages, setMessages]     = useState<any[]>([])
   const [credits, setCredits]       = useState(parseInt(callerCredits || '0') || 0)
   const [rate, setRate]             = useState(0)
+  const [lowCredits, setLowCredits] = useState(false)
   const [flyingGift, setFlyingGift] = useState<any>(null)
   const [ending, setEnding]         = useState(false)
   const [callReady, setCallReady]   = useState(false)
@@ -104,7 +104,7 @@ export default function CallScreen() {
     }, 4000)
   }
 
-  const initCall = async () => {
+const initCall = async () => {
     try {
       await Camera.requestCameraPermissionsAsync()
       await Audio.requestPermissionsAsync()
@@ -113,6 +113,48 @@ export default function CallScreen() {
       setUserId(user.id); userIdRef.current = user.id
       const { data: h } = await supabase.from('profiles').select('*').eq('id', id).single()
       setHost(h)
+
+      const amHost = isHost === 'true'
+
+      if (amHost && routeCallId) {
+        // Host answering an already-accepted call — join directly, do NOT create a new call
+        setCallId(routeCallId)
+        setRoomUrl(routeRoomUrl || null)
+        console.log('HOST JOIN DEBUG:', JSON.stringify({ routeCallId, routeRoomUrl, isHost }))
+        setPhase('accepted')
+        setTimeout(() => setCallReady(true), 1500)
+        showControls()
+        timerRef.current = setInterval(() => setSeconds(s => s + 1), 1000)
+
+        channelRef.current = supabase
+          .channel(`call-${routeCallId}`)
+          .on('postgres_changes', {
+            event: 'UPDATE', schema: 'public', table: 'calls',
+            filter: `id=eq.${routeCallId}`,
+          }, (payload) => {
+            if (payload.new.status === 'ended') {
+              clearInterval(timerRef.current)
+              channelRef.current?.unsubscribe()
+              if (!navigating.current) {
+                navigating.current = true
+                const spent = sparksSpent()
+                router.replace({ pathname: '/(main)/review/[id]', params: { id: id as string, duration: seconds, cost: spent, isHost: 'true', callId: routeCallId } })
+              }
+            }
+          })
+          .on('postgres_changes', {
+            event: 'INSERT', schema: 'public', table: 'messages',
+            filter: `call_id=eq.${routeCallId}`,
+          }, (payload) => {
+            const msg = payload.new
+            if (msg.sender_id === userIdRef.current) return
+            addMessage(msg.content, false, msg.id)
+          })
+          .subscribe()
+        return
+      }
+
+      // Caller flow — create a new call
       const premium  = callerPremium || ''
       const discount = premium === 'platinum' ? 0.8 : premium === 'gold' ? 0.9 : 1
       setRate(Math.round((h?.rate || 0) * discount))
@@ -162,7 +204,7 @@ export default function CallScreen() {
             if (!navigating.current) {
               navigating.current = true
               const spent = sparksSpent()
-              router.replace({ pathname: '/(main)/review/[id]', params: { id: id as string, duration: seconds, cost: spent } })
+              router.replace({ pathname: '/(main)/review/[id]', params: { id: id as string, duration: seconds, cost: spent, isHost: isHost || 'false', callId: callId || '' } })
             }
           }
         })
@@ -171,7 +213,7 @@ export default function CallScreen() {
           filter: `call_id=eq.${data.callId}`,
         }, (payload) => {
           const msg = payload.new
-          if (msg.sender_id === userIdRef.current) return // skip own messages
+          if (msg.sender_id === userIdRef.current) return
           addMessage(msg.content, false, msg.id)
         })
         .subscribe()
@@ -262,7 +304,7 @@ export default function CallScreen() {
     } catch (e) {}
     if (!navigating.current) {
       navigating.current = true
-      router.replace({ pathname: '/(main)/review/[id]', params: { id: id as string, duration: seconds, cost: spent } })
+      router.replace({ pathname: '/(main)/review/[id]', params: { id: id as string, duration: seconds, cost: spent, isHost: isHost || 'false', callId: callId || '' } })
     }
   }
 
@@ -341,7 +383,7 @@ export default function CallScreen() {
       {/* Low credits warning */}
       {lowCredits && (
         <View style={s.lowCreditsBar} pointerEvents="none">
-          <Text style={s.lowCreditsTxt}>? Low credits � call will end soon</Text>
+          <Text style={s.lowCreditsTxt}>? Low credits   call will end soon</Text>
         </View>
       )}
 

@@ -53,12 +53,17 @@ export default function Home() {
     setLoading(false)
   }
 
-  const filtered = users.filter(u => {
+    const filtered = users.filter(u => {
     const matchSearch = u.name?.toLowerCase().includes(search.toLowerCase())
     const matchTab = tab === 'Everyone' ? true
       : tab === 'Hosts' ? u.is_host
       : !u.is_host
     return matchSearch && matchTab
+  }).sort((a, b) => {
+    const aOnline = a.last_seen && (Date.now() - new Date(a.last_seen).getTime()) < 45000
+    const bOnline = b.last_seen && (Date.now() - new Date(b.last_seen).getTime()) < 45000
+    if (aOnline !== bOnline) return aOnline ? -1 : 1
+    return (b.rating || 0) - (a.rating || 0)
   })
 
   const renderCard = ({ item: user }: any) => (
@@ -73,15 +78,18 @@ export default function Home() {
           {user.name?.charAt(0)}
         </Text>
       </View>
-      {user.online && <View style={s.onlineDot}/>}
+            {user.last_seen && (Date.now() - new Date(user.last_seen).getTime()) < 45000 && <View style={s.onlineDot}/>}
       {/* Badge — Host or Caller */}
       <View style={[s.badge, user.is_host ? s.badgeHost : s.badgeCaller]}>
         <Text style={[s.badgeTxt, user.is_host ? s.badgeTxtHost : s.badgeTxtCaller]}>
           {user.is_host ? 'HOST' : 'CALLER'}
         </Text>
       </View>
-      <Text style={s.userName} numberOfLines={1}>{user.name?.split(' ')[0]}</Text>
+           <Text style={s.userName} numberOfLines={1}>{user.name?.split(' ')[0]}</Text>
       <Text style={s.userRegion}>{user.city}</Text>
+      {user.is_host && user.total_reviews > 0 && (
+        <Text style={s.ratingTxt}>⭐ {user.rating} ({user.total_reviews})</Text>
+      )}
       <View style={s.ratePill}>
         <Text style={s.rateTxt}>⚡{user.rate}/min</Text>
       </View>
@@ -206,7 +214,8 @@ const s = StyleSheet.create({
   onlineDot:        { position: 'absolute', top: 14, right: 14,
                       width: 9, height: 9, borderRadius: 5, backgroundColor: C.success },
   userName:         { fontSize: 15, color: C.white, fontFamily: 'Outfit_700Bold' },
-  userRegion:       { fontSize: 11, color: C.muted, fontFamily: 'Outfit_400Regular' },
+    userRegion:       { fontSize: 11, color: C.muted, fontFamily: 'Outfit_400Regular' },
+  ratingTxt:        { fontSize: 11, color: C.gold, fontFamily: 'Outfit_500Medium', marginTop: 2 },
   ratePill:         { backgroundColor: 'rgba(201,164,106,0.12)', borderRadius: 99,
                       paddingHorizontal: 10, paddingVertical: 4,
                       borderWidth: 1, borderColor: 'rgba(201,164,106,0.25)' },

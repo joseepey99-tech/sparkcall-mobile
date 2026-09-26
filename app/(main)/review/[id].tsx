@@ -7,7 +7,7 @@ import { C } from '../../../lib/theme'
 
 export default function Review() {
   const router = useRouter()
-  const { id, duration, cost } = useLocalSearchParams<{ id:string; duration:string; cost:string }>()
+  const { id, duration, cost, isHost, callId } = useLocalSearchParams<{ id:string; duration:string; cost:string; isHost?:string; callId?:string }>()
   const [rating, setRating]   = useState(0)
   const [comment, setComment] = useState('')
   const [loading, setLoading] = useState(false)
@@ -15,11 +15,33 @@ export default function Review() {
   const submit = async () => {
     if (rating === 0) return
     setLoading(true)
-    const { data: { user } } = await supabase.auth.getUser()
-    await supabase.from('reviews').insert({
-      caller_id: user!.id, host_id: id, rating, comment: comment.trim() || null,
-      duration_seconds: Number(duration), sparks_spent: Number(cost),
-    })
+    try {
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+      if (userError || !user) {
+        console.error('Could not get current user:', userError?.message)
+        setLoading(false)
+        return
+      }
+      const amHost = isHost === 'true'
+      const payload = {
+        caller_id: amHost ? id : user.id,
+        host_id: amHost ? user.id : id,
+        call_id: callId || null,
+        reviewer_role: amHost ? 'host' : 'caller',
+        rating, comment: comment.trim() || null,
+        duration_seconds: Number(duration), sparks_spent: Number(cost),
+      }
+      console.log('Submitting review payload:', JSON.stringify(payload))
+      const { data, error } = await supabase.from('reviews').insert(payload).select()
+      if (error) {
+        console.error('Review insert failed:', JSON.stringify(error))
+        setLoading(false)
+        return
+      }
+      console.log('Review insert succeeded:', JSON.stringify(data))
+    } catch (e: any) {
+      console.error('Unexpected error submitting review:', e?.message || e)
+    }
     setLoading(false)
     router.replace('/(main)/home')
   }
