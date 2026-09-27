@@ -1,11 +1,23 @@
 import { useState, useCallback } from 'react'
 import { View, Text, TouchableOpacity, StyleSheet,
-         ScrollView, Image, Dimensions } from 'react-native'
+         ScrollView, Image, Dimensions, Modal } from 'react-native'
 import { LinearGradient } from 'expo-linear-gradient'
+import { VideoView, useVideoPlayer } from 'expo-video'
+import { Play } from 'lucide-react-native'
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { supabase } from '../../../lib/supabase'
 import { C } from '../../../lib/theme'
+
+function VideoPlayer({ uri }: { uri: string }) {
+  const player = useVideoPlayer(uri, p => { p.play() })
+  return <VideoView player={player} style={{ width: '100%', height: '100%' }} contentFit="contain" nativeControls={false} />
+}
+
+function VideoThumbnail({ uri }: { uri: string }) {
+  const player = useVideoPlayer(uri, p => { p.pause() })
+  return <VideoView player={player} style={{ width: '100%', height: '100%' }} contentFit="cover" nativeControls={false} />
+}
 
 export default function Profile() {
   const router  = useRouter()
@@ -14,19 +26,23 @@ export default function Profile() {
   const insets = useSafeAreaInsets()
   const [caller, setCaller]       = useState<any>(null)
   const [reviews, setReviews]     = useState<any[]>([])
+  const [videos, setVideos]       = useState<any[]>([])
+  const [playingIndex, setPlayingIndex] = useState<number | null>(null)
 
     useFocusEffect(useCallback(() => {
     setHost(null)
     const load = async () => {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) return
-      const [{ data: h }, { data: c }, { data: r }] = await Promise.all([
+        const [{ data: h }, { data: c }, { data: r }, { data: v }] = await Promise.all([
         supabase.from('profiles').select('*').eq('id', id).single(),
         supabase.from('profiles').select('*').eq('id', session.user.id).single(),
         supabase.from('reviews').select('*').eq('host_id', id)
           .order('created_at', { ascending: false }).limit(5),
+        supabase.from('profile_videos').select('*').eq('user_id', id)
+          .order('created_at', { ascending: false }),
       ])
-      setHost(h); setCaller(c); setReviews(r || [])
+      setHost(h); setCaller(c); setReviews(r || []); setVideos(v || [])
     }
     load()
   }, [id]))
@@ -108,6 +124,25 @@ export default function Profile() {
           <View style={s.section}>
             <Text style={s.sectionTitle}>Language</Text>
             <Text style={s.bio}>{host.language}</Text>
+                    </View>
+        )}
+
+        {videos.length > 0 && (
+          <View style={s.section}>
+            <Text style={s.sectionTitle}>Videos</Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+              {videos.map((v, i) => (
+                <TouchableOpacity key={v.id} onPress={() => setPlayingIndex(i)} style={s.videoCard}>
+                  <VideoThumbnail uri={v.video_url} />
+                  <View style={s.videoPlayBadge}>
+                    <Play size={16} color="#fff" fill="#fff" style={{ marginLeft: 2 }} />
+                  </View>
+                  <View style={s.videoDurationBadge}>
+                    <Text style={s.videoDurationTxt}>{v.duration_seconds}s</Text>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </View>
           </View>
         )}
 
@@ -135,8 +170,44 @@ export default function Profile() {
         </TouchableOpacity>
         <TouchableOpacity style={s.callBtn} onPress={startCall}>
           <Text style={s.callBtnTxt}>📞 Call · ⚡{getRate()}/min</Text>
-        </TouchableOpacity>
+                </TouchableOpacity>
       </View>
+
+      <Modal visible={playingIndex !== null} animationType="fade" transparent={false}>
+        <View style={{ flex: 1, backgroundColor: '#000', justifyContent: 'center' }}>
+          {playingIndex !== null && videos[playingIndex] && (
+            <VideoPlayer key={videos[playingIndex].id} uri={videos[playingIndex].video_url} />
+          )}
+
+          <TouchableOpacity
+            onPress={() => setPlayingIndex(null)}
+            style={{ position: 'absolute', top: 50, right: 20, width: 40, height: 40,
+              borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.15)',
+              alignItems: 'center', justifyContent: 'center' }}>
+            <Text style={{ color: '#fff', fontSize: 18 }}>✕</Text>
+          </TouchableOpacity>
+
+          {playingIndex !== null && playingIndex > 0 && (
+            <TouchableOpacity
+              onPress={() => setPlayingIndex(i => (i !== null ? i - 1 : null))}
+              style={{ position: 'absolute', left: 16, top: '50%', marginTop: -22,
+                width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.15)',
+                alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={{ color: '#fff', fontSize: 20 }}>‹</Text>
+            </TouchableOpacity>
+          )}
+
+          {playingIndex !== null && playingIndex < videos.length - 1 && (
+            <TouchableOpacity
+              onPress={() => setPlayingIndex(i => (i !== null ? i + 1 : null))}
+              style={{ position: 'absolute', right: 16, top: '50%', marginTop: -22,
+                width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.15)',
+                alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={{ color: '#fff', fontSize: 20 }}>›</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </Modal>
     </View>
   )
 }
@@ -177,7 +248,18 @@ const s = StyleSheet.create({
   chatBtnTxt:   { color: C.white, fontFamily: 'Outfit_700Bold', fontSize: 14 },
   callBtn:      { flex: 2, backgroundColor: C.rose, borderRadius: 12,
                   padding: 14, alignItems: 'center' },
-  callBtnTxt:   { color: '#fff', fontFamily: 'Outfit_700Bold', fontSize: 14 },
+    callBtnTxt:   { color: '#fff', fontFamily: 'Outfit_700Bold', fontSize: 14 },
+  videoCard:        { width: 90, height: 130, borderRadius: 12, backgroundColor: C.bg,
+                      borderWidth: 1, borderColor: C.border, overflow: 'hidden' },
+  videoPlayBadge:   { position: 'absolute', top: '50%', left: '50%',
+                      marginTop: -20, marginLeft: -20, width: 40, height: 40, borderRadius: 20,
+                      backgroundColor: 'rgba(255,255,255,0.15)',
+                      borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.4)',
+                      alignItems: 'center', justifyContent: 'center',
+                      shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 8, shadowOffset: { width: 0, height: 2 } },
+  videoDurationBadge: { position: 'absolute', bottom: 6, left: 6,
+                      backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
+  videoDurationTxt: { color: '#fff', fontSize: 10, fontFamily: 'Outfit_500Medium' },
 })
 
 
