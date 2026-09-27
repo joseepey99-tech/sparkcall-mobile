@@ -10,6 +10,7 @@ import { ScrollView } from 'react-native-gesture-handler'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Camera } from 'expo-camera'
 import { Audio } from 'expo-av'
+import * as ScreenCapture from 'expo-screen-capture'
 
 const API = 'https://sparkcall.vercel.app'
 const { width: SW } = Dimensions.get('window')
@@ -56,6 +57,23 @@ const { id, callerCredits, callerPremium, isHost, callId: routeCallId, roomUrl: 
   const [callReady, setCallReady]   = useState(false)
   const [controlsVisible, setControlsVisible] = useState(true)
   const [showChat, setShowChat]             = useState(false)
+
+    // Screen capture protection
+  const [captureWarning, setCaptureWarning] = useState(false)
+
+  useEffect(() => {
+    ScreenCapture.preventScreenCaptureAsync()
+
+    const sub = ScreenCapture.addScreenshotListener(() => {
+      setCaptureWarning(true)
+      setTimeout(() => setCaptureWarning(false), 3000)
+    })
+
+    return () => {
+      ScreenCapture.allowScreenCaptureAsync()
+      sub.remove()
+    }
+  }, [])
 
   // Fetch credits
   useEffect(() => {
@@ -133,6 +151,7 @@ const initCall = async () => {
             filter: `id=eq.${routeCallId}`,
           }, (payload) => {
             if (payload.new.status === 'ended') {
+              ScreenCapture.allowScreenCaptureAsync()
               clearInterval(timerRef.current)
               channelRef.current?.unsubscribe()
               if (!navigating.current) {
@@ -198,6 +217,7 @@ const initCall = async () => {
             setPhase('rejected')
             setTimeout(() => { if (!navigating.current) { navigating.current = true; router.back() } }, 2500)
           } else if (status === 'ended') {
+            ScreenCapture.allowScreenCaptureAsync()
             clearTimeout(timeoutRef.current)
             clearInterval(timerRef.current)
             channelRef.current?.unsubscribe()
@@ -223,8 +243,9 @@ const initCall = async () => {
     }
   }
 
-  const cancelCall = async () => {
+    const cancelCall = async () => {
     if (!callId) return
+    ScreenCapture.allowScreenCaptureAsync()
     channelRef.current?.unsubscribe()
     await fetch(`${API}/api/calls/reject`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -290,9 +311,10 @@ const initCall = async () => {
     ])
   }
 
-  const endCall = async () => {
+    const endCall = async () => {
     if (ending || !callReady) return
     setEnding(true)
+    ScreenCapture.allowScreenCaptureAsync()
     clearInterval(timerRef.current)
     channelRef.current?.unsubscribe()
     const spent = sparksSpent()
@@ -380,10 +402,17 @@ const initCall = async () => {
         />
       ) : null}
 
-      {/* Low credits warning */}
+            {/* Low credits warning */}
       {lowCredits && (
         <View style={s.lowCreditsBar} pointerEvents="none">
           <Text style={s.lowCreditsTxt}>? Low credits   call will end soon</Text>
+        </View>
+      )}
+
+      {/* Screenshot/recording protection overlay */}
+      {captureWarning && (
+        <View style={s.captureOverlay} pointerEvents="none">
+          <Text style={s.captureOverlayTxt}>🔒 Screenshots aren't allowed during calls</Text>
         </View>
       )}
 
@@ -551,7 +580,11 @@ const s = StyleSheet.create({
   lowCreditsBar:  { position:'absolute', top:'45%', left:20, right:20,
                     backgroundColor:'rgba(214,63,110,0.85)', borderRadius:12,
                     padding:10, alignItems:'center', zIndex:30 },
-  lowCreditsTxt:  { color:'#fff', fontFamily:'Outfit_700Bold', fontSize:13 },
+    lowCreditsTxt:  { color:'#fff', fontFamily:'Outfit_700Bold', fontSize:13 },
+  captureOverlay: { position:'absolute', top:0, left:0, right:0, bottom:0,
+                    backgroundColor:'#000', alignItems:'center', justifyContent:'center',
+                    zIndex:999 },
+  captureOverlayTxt: { color:'#fff', fontFamily:'Outfit_700Bold', fontSize:16, textAlign:'center', paddingHorizontal:32 },
   rateTag:          { backgroundColor: 'rgba(201,164,106,0.1)', borderRadius: 99,
                       paddingHorizontal: 20, paddingVertical: 8, borderWidth: 1, borderColor: 'rgba(201,164,106,0.2)' },
   rateTagTxt:       { color: C.gold, fontSize: 13, fontFamily: 'Outfit_500Medium' },
