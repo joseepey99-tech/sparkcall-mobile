@@ -8,6 +8,7 @@ import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { supabase } from '../../../lib/supabase'
 import { C } from '../../../lib/theme'
+import { countryToFlag, COUNTRIES } from '../../../lib/countries'
 
 function VideoPlayer({ uri }: { uri: string }) {
   const player = useVideoPlayer(uri, p => { p.play() })
@@ -94,7 +95,9 @@ export default function Profile() {
             colors={['transparent', 'rgba(6,4,14,0.95)']}
             style={s.heroGradient}>
             <Text style={s.name}>{host?.name}</Text>
-            <Text style={s.region}>{host?.city || host?.region || '—'}</Text>
+            <Text style={s.region}>
+              {host?.country ? `${countryToFlag(host.country)} ${COUNTRIES.find(c => c.code === host.country)?.name}` : '—'}
+            </Text>
           </LinearGradient>
         </View>
         <View style={s.contentBelow}>

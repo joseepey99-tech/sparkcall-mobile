@@ -8,6 +8,7 @@ import { useRouter } from 'expo-router'
 import { LinearGradient } from 'expo-linear-gradient'
 import { supabase } from '../../lib/supabase'
 import { C } from '../../lib/theme'
+import { countryToFlag, COUNTRIES, countryToContinent } from '../../lib/countries'
 
 const REGIONS = ['All','Africa','Asia','Europe','Americas','Middle East','Oceania']
 const TABS = ['Everyone', 'Hosts', 'Callers']
@@ -47,7 +48,7 @@ export default function Home() {
       supabase.from('profiles').select('*').eq('id', user!.id).single(),
       region === 'All'
         ? supabase.from('profiles').select('*').neq('id', user!.id)
-        : supabase.from('profiles').select('*').neq('id', user!.id).eq('city', region),
+        : supabase.from('profiles').select('*').neq('id', user!.id),
     ])
     setProfile(prof)
     setUsers(all || [])
@@ -59,7 +60,8 @@ export default function Home() {
     const matchTab = tab === 'Everyone' ? true
       : tab === 'Hosts' ? u.is_host
       : !u.is_host
-    return matchSearch && matchTab
+    const matchRegion = region === 'All' || countryToContinent(u.country) === region
+    return matchSearch && matchTab && matchRegion
   }).sort((a, b) => {
     const aOnline = a.last_seen && (Date.now() - new Date(a.last_seen).getTime()) < 45000
     const bOnline = b.last_seen && (Date.now() - new Date(b.last_seen).getTime()) < 45000
@@ -97,7 +99,11 @@ export default function Home() {
           colors={['transparent', 'rgba(6,4,14,0.95)']}
           style={s.cardGradient}>
           <Text style={s.userName} numberOfLines={1}>{user.name?.split(' ')[0]}</Text>
-          <Text style={s.userRegion}>{user.city}</Text>
+            {user.country && (
+            <Text style={s.userRegion}>
+              {countryToFlag(user.country)} {COUNTRIES.find(c => c.code === user.country)?.name}
+            </Text>
+          )}
           {user.is_host && user.total_reviews > 0 && (
             <Text style={s.ratingTxt}>⭐ {user.rating} ({user.total_reviews})</Text>
           )}
@@ -229,7 +235,7 @@ const s = StyleSheet.create({
                       width: 10, height: 10, borderRadius: 5, backgroundColor: C.success,
                       borderWidth: 2, borderColor: '#fff' },
   userName:         { fontSize: 16, color: C.white, fontFamily: 'Outfit_700Bold' },
-  userRegion:       { fontSize: 11, color: 'rgba(255,255,255,0.7)', fontFamily: 'Outfit_400Regular' },
+  userRegion:       { fontSize: 13, color: 'rgba(255,255,255,0.7)', fontFamily: 'Outfit_400Regular' },
   ratingTxt:        { fontSize: 11, color: C.gold, fontFamily: 'Outfit_500Medium', marginTop: 2 },
   ratePill:         { backgroundColor: 'rgba(201,164,106,0.25)', borderRadius: 99,
                       paddingHorizontal: 10, paddingVertical: 4,

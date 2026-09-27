@@ -4,6 +4,7 @@ import {
   SafeAreaView, ScrollView, Alert, Switch, Image, Modal,
 } from 'react-native'
 import { Play } from 'lucide-react-native'
+import { COUNTRIES, countryToFlag } from '../../lib/countries'
 import * as ImagePicker from 'expo-image-picker'
 import * as FileSystem from 'expo-file-system/legacy'
 import { decode } from 'base64-arraybuffer'
@@ -99,6 +100,16 @@ export default function Settings() {
   const [videosLoading, setVideosLoading] = useState(true)
   const [videoUploading, setVideoUploading] = useState(false)
   const [playingIndex, setPlayingIndex] = useState<number | null>(null)
+  const [countryPickerOpen, setCountryPickerOpen] = useState(false)
+
+  const updateCountry = async (code: string) => {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+    const { error } = await supabase.from('profiles').update({ country: code }).eq('id', user.id)
+    if (error) { Alert.alert('Failed to update country', error.message); return }
+    setProfile((p: any) => ({ ...p, country: code }))
+    setCountryPickerOpen(false)
+  }
 
   const loadVideos = async () => {
     setVideosLoading(true)
@@ -274,6 +285,19 @@ export default function Settings() {
           </View>
         </View>
 
+        {/* Country */}
+        <View style={s.section}>
+          <Text style={s.sectionTitle}>Country</Text>
+          <TouchableOpacity style={s.row} onPress={() => setCountryPickerOpen(true)}>
+            <Text style={s.rowLabel}>
+              {profile?.country
+                ? `${countryToFlag(profile.country)} ${COUNTRIES.find(c => c.code === profile.country)?.name || profile.country}`
+                : 'Not set'}
+            </Text>
+            <Text style={s.chevron}>›</Text>
+          </TouchableOpacity>
+        </View>
+
         {/* Balance */}
         <View style={s.section}>
           <Text style={s.sectionTitle}>Balance</Text>
@@ -381,8 +405,31 @@ export default function Settings() {
         {/* Footer */}
                 <Text style={s.footer}>SparkCall v1.0.0 · support@sparkcall.com</Text>
       </ScrollView>
+      <Modal visible={countryPickerOpen} animationType="slide" transparent={false}>
+        <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', padding: 20, gap: 12 }}>
+            <TouchableOpacity onPress={() => setCountryPickerOpen(false)}
+              style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: C.card,
+                alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={{ color: C.white, fontSize: 18 }}>←</Text>
+            </TouchableOpacity>
+            <Text style={{ color: C.white, fontSize: 20, fontFamily: 'Outfit_700Bold' }}>Select Country</Text>
+          </View>
+          <ScrollView contentContainerStyle={{ padding: 20, paddingTop: 0, gap: 4 }}>
+             {[...COUNTRIES].sort((a, b) => a.name.localeCompare(b.name)).map(c => (
+              <TouchableOpacity key={c.code} onPress={() => updateCountry(c.code)}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 12,
+                  paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: C.border }}>
+                <Text style={{ fontSize: 20 }}>{countryToFlag(c.code)}</Text>
+                <Text style={{ color: C.white, fontFamily: 'Outfit_400Regular', fontSize: 15 }}>{c.name}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
 
-            <Modal visible={playingIndex !== null} animationType="fade" transparent={false}>
+      
+        <Modal visible={playingIndex !== null} animationType="fade" transparent={false}>
         <View style={{ flex: 1, backgroundColor: '#000', justifyContent: 'center' }}>
           {playingIndex !== null && videos[playingIndex] && (
             <VideoPlayer key={videos[playingIndex].id} uri={videos[playingIndex].video_url} />
