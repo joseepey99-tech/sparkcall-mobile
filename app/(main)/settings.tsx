@@ -36,16 +36,30 @@ export default function Settings() {
   }, [])
     const [uploading, setUploading] = useState(false)
 
-  const pickAndUploadAvatar = async () => {
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync()
-    if (!perm.granted) { Alert.alert('Permission needed', 'Please allow photo library access.'); return }
+    const pickAndUploadAvatar = async () => {
+    Alert.alert('Update photo', 'Choose a source', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Take Photo', onPress: () => captureOrPickAvatar('camera') },
+      { text: 'Choose from Library', onPress: () => captureOrPickAvatar('library') },
+    ])
+  }
 
-        const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: false,
-      quality: 0.7,
-    })
-    if (result.canceled) return
+  const captureOrPickAvatar = async (source: 'camera' | 'library') => {
+    let result
+    if (source === 'camera') {
+      const perm = await ImagePicker.requestCameraPermissionsAsync()
+      if (!perm.granted) { Alert.alert('Permission needed', 'Please allow camera access.'); return }
+      result = await ImagePicker.launchCameraAsync({ quality: 0.7 })
+    } else {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync()
+      if (!perm.granted) { Alert.alert('Permission needed', 'Please allow photo library access.'); return }
+      result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: false,
+        quality: 0.7,
+      })
+    }
+         if (result.canceled) return
 
     setUploading(true)
     try {
@@ -97,19 +111,37 @@ export default function Settings() {
 
   useEffect(() => { loadVideos() }, [])
 
-  const pickAndUploadVideo = async () => {
+    const pickAndUploadVideo = async () => {
     if (videos.length >= MAX_VIDEOS) {
       Alert.alert('Limit reached', `You can post up to ${MAX_VIDEOS} videos. Delete one to add another.`)
       return
     }
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync()
-    if (!perm.granted) { Alert.alert('Permission needed', 'Please allow photo library access.'); return }
+    Alert.alert('Add video', 'Choose a source', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Record Video', onPress: () => captureOrPickVideo('camera') },
+      { text: 'Choose from Library', onPress: () => captureOrPickVideo('library') },
+    ])
+  }
 
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Videos,
-      videoMaxDuration: MAX_DURATION,
-      quality: 0.7,
-    })
+  const captureOrPickVideo = async (source: 'camera' | 'library') => {
+    let result
+    if (source === 'camera') {
+      const perm = await ImagePicker.requestCameraPermissionsAsync()
+      if (!perm.granted) { Alert.alert('Permission needed', 'Please allow camera access.'); return }
+      result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Videos,
+        videoMaxDuration: MAX_DURATION,
+        quality: 0.7,
+      })
+    } else {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync()
+      if (!perm.granted) { Alert.alert('Permission needed', 'Please allow photo library access.'); return }
+      result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Videos,
+        videoMaxDuration: MAX_DURATION,
+        quality: 0.7,
+      })
+    }
     if (result.canceled) return
 
     const asset = result.assets[0]
