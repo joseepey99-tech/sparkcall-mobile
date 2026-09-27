@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { View, Text, TouchableOpacity, TextInput, StyleSheet, Animated, Dimensions } from 'react-native'
+import { View, Text, TouchableOpacity, TextInput, StyleSheet, Animated, Dimensions, Image } from 'react-native'
 import { WebView } from 'react-native-webview'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { Mic, MicOff, Video, VideoOff, Gift, PhoneOff, Send, FlipHorizontal, EyeOff, Eye } from 'lucide-react-native'
@@ -314,7 +314,7 @@ const initCall = async () => {
       <View style={[s.callingInner, { paddingTop: insets.top + 40, paddingBottom: insets.bottom + 40 }]}>
         <Text style={s.callingLabel}>Calling…</Text>
         <Animated.View style={[s.callingAvatar, { transform: [{ scale: pulseAnim }] }]}>
-          <Text style={s.callingAvatarTxt}>{host?.name?.charAt(0) || '?'}</Text>
+          {host?.avatar_url ? <Image source={{ uri: host.avatar_url }} style={s.callingAvatarImg} /> : <Text style={s.callingAvatarTxt}>{host?.name?.charAt(0) || '?'}</Text>}
         </Animated.View>
         <Text style={s.callingName}>{host?.name}</Text>
         <Text style={s.callingCity}>{host?.city}</Text>
@@ -335,7 +335,7 @@ const initCall = async () => {
     <View style={[s.root, s.callingBg]}>
       <View style={[s.callingInner, { paddingTop: insets.top + 60 }]}>
         <View style={s.callingAvatar}>
-          <Text style={s.callingAvatarTxt}>{host?.name?.charAt(0) || '?'}</Text>
+          {host?.avatar_url ? <Image source={{ uri: host.avatar_url }} style={s.callingAvatarImg} /> : <Text style={s.callingAvatarTxt}>{host?.name?.charAt(0) || '?'}</Text>}
         </View>
         <Text style={s.callingName}>{host?.name}</Text>
         <Text style={{ color: '#FF4455', fontSize: 16, marginTop: 16, fontFamily: 'Outfit_500Medium' }}>
@@ -397,8 +397,8 @@ const initCall = async () => {
       {/* Top bar */}
       <Animated.View style={[s.topBar, { paddingTop: insets.top + 8, opacity: controlsFade }]} pointerEvents="none">
         <View style={s.hostPill}>
-          <View style={s.hostAv}>
-            <Text style={s.hostAvTxt}>{host?.name?.charAt(0)}</Text>
+                    <View style={s.hostAv}>
+            {host?.avatar_url ? <Image source={{ uri: host.avatar_url }} style={s.hostAvImg} /> : <Text style={s.hostAvTxt}>{host?.name?.charAt(0)}</Text>}
           </View>
           <View>
             <Text style={s.hostName}>{host?.name?.split(' ')[0]}</Text>
@@ -544,6 +544,7 @@ const s = StyleSheet.create({
                       borderWidth: 2, borderColor: 'rgba(214,63,110,0.5)', alignItems: 'center', justifyContent: 'center',
                       shadowColor: C.rose, shadowOpacity: 0.6, shadowRadius: 30, elevation: 10 },
   callingAvatarTxt: { fontSize: 44, color: C.rose, fontFamily: 'Outfit_700Bold' },
+  callingAvatarImg: { width: 110, height: 110, borderRadius: 55 },
   callingName:      { fontSize: 28, color: C.white, fontFamily: 'Outfit_700Bold' },
   callingCity:      { fontSize: 13, color: C.muted, fontFamily: 'Outfit_400Regular' },
   callingWait:      { fontSize: 12, color: C.muted, fontFamily: 'Outfit_400Regular' },
@@ -565,6 +566,7 @@ const s = StyleSheet.create({
   hostAv:           { width: 34, height: 34, borderRadius: 17, backgroundColor: 'rgba(214,63,110,0.6)',
                       alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.3)' },
   hostAvTxt:        { fontSize: 13, color: '#fff', fontFamily: 'Outfit_700Bold' },
+  hostAvImg:        { width: 34, height: 34, borderRadius: 17 },
   hostName:         { color: '#fff', fontSize: 14, fontFamily: 'Outfit_700Bold' },
   liveRow:          { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 1 },
   liveDot:          { width: 5, height: 5, borderRadius: 3, backgroundColor: C.success },

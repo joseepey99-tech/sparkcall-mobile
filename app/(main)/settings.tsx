@@ -1,8 +1,11 @@
 import { useState, useEffect } from 'react'
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  SafeAreaView, ScrollView, Alert, Switch,
+  SafeAreaView, ScrollView, Alert, Switch, Image,
 } from 'react-native'
+import * as ImagePicker from 'expo-image-picker'
+import * as FileSystem from 'expo-file-system/legacy'
+import { decode } from 'base64-arraybuffer'
 import { supabase } from '../../lib/supabase'
 import { C } from '../../lib/theme'
 
@@ -20,7 +23,50 @@ export default function Settings() {
       setProfile(data)
     })
   }, [])
+    const [uploading, setUploading] = useState(false)
 
+  const pickAndUploadAvatar = async () => {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync()
+    if (!perm.granted) { Alert.alert('Permission needed', 'Please allow photo library access.'); return }
+
+        const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: false,
+      quality: 0.7,
+    })
+    if (result.canceled) return
+
+    setUploading(true)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+
+      const asset = result.assets[0]
+      const ext = asset.uri.split('.').pop() || 'jpg'
+      const path = `${user.id}/avatar.${ext}`
+
+            const base64 = await FileSystem.readAsStringAsync(asset.uri, { encoding: FileSystem.EncodingType.Base64 })
+      const arrayBuffer = decode(base64)
+
+      const { error: uploadError } = await supabase.storage
+        .from('Avatars')
+        .upload(path, arrayBuffer, { upsert: true, contentType: `image/${ext}` })
+      if (uploadError) throw uploadError
+
+      const { data: urlData } = supabase.storage.from('Avatars').getPublicUrl(path)
+      const avatarUrl = `${urlData.publicUrl}?t=${Date.now()}`
+
+      const { error: updateError } = await supabase.from('profiles').update({ avatar_url: avatarUrl }).eq('id', user.id)
+      if (updateError) throw updateError
+
+      setProfile((p: any) => ({ ...p, avatar_url: avatarUrl }))
+        } catch (err: any) {
+      console.log('AVATAR UPLOAD ERROR:', JSON.stringify(err, Object.getOwnPropertyNames(err)))
+      Alert.alert('Upload failed', err.message || 'Something went wrong.')
+    } finally {
+      setUploading(false)
+    }
+  }
   const signOut = async () => {
     Alert.alert('Sign out', 'Are you sure you want to sign out?', [
       { text: 'Cancel', style: 'cancel' },
@@ -68,9 +114,16 @@ export default function Settings() {
 
         {/* Profile card */}
         <View style={s.profileCard}>
-          <View style={s.avatar}>
-            <Text style={s.avatarTxt}>{profile?.name?.charAt(0)}</Text>
-          </View>
+                    <TouchableOpacity style={s.avatar} onPress={pickAndUploadAvatar} disabled={uploading}>
+            {profile?.avatar_url ? (
+              <Image source={{ uri: profile.avatar_url }} style={s.avatarImg} />
+            ) : (
+              <Text style={s.avatarTxt}>{profile?.name?.charAt(0)}</Text>
+            )}
+            <View style={s.avatarEditBadge}>
+              <Text style={s.avatarEditTxt}>{uploading ? '…' : '✎'}</Text>
+            </View>
+          </TouchableOpacity>
           <View style={s.profileInfo}>
             <Text style={s.profileName}>{profile?.name}</Text>
             <Text style={s.profileEmail}>{profile?.email}</Text>
@@ -172,7 +225,13 @@ const s = StyleSheet.create({
                    backgroundColor: 'rgba(214,63,110,0.2)',
                    borderWidth: 1.5, borderColor: 'rgba(214,63,110,0.4)',
                    alignItems: 'center', justifyContent: 'center' },
-  avatarTxt:     { fontSize: 22, color: C.rose, fontFamily: 'Outfit_700Bold' },
+    avatarTxt:     { fontSize: 22, color: C.rose, fontFamily: 'Outfit_700Bold' },
+  avatarImg:     { width: 60, height: 60, borderRadius: 30 },
+  avatarEditBadge: { position: 'absolute', bottom: -2, right: -2,
+                     width: 22, height: 22, borderRadius: 11,
+                     backgroundColor: C.rose, borderWidth: 2, borderColor: C.bg,
+                     alignItems: 'center', justifyContent: 'center' },
+  avatarEditTxt: { color: '#fff', fontSize: 11, fontFamily: 'Outfit_700Bold' },
   profileInfo:   { flex: 1, gap: 3 },
   profileName:   { fontSize: 17, color: C.white, fontFamily: 'Outfit_700Bold' },
   profileEmail:  { fontSize: 12, color: C.muted, fontFamily: 'Outfit_400Regular' },

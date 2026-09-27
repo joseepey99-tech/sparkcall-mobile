@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { View, Text, TouchableOpacity, StyleSheet, Animated, Modal } from 'react-native'
+import { View, Text, TouchableOpacity, StyleSheet, Animated, Modal, Image } from 'react-native'
 import { useRouter } from 'expo-router'
 import { supabase } from '../lib/supabase'
 import { C } from '../lib/theme'
@@ -115,8 +115,12 @@ export default function IncomingCallMobile() {
       <View style={s.overlay}>
         <View style={s.card}>
           {/* Pulse avatar */}
-          <Animated.View style={[s.avatar, { transform: [{ scale: pulseAnim }] }]}>
-            <Text style={s.avatarTxt}>{caller?.name?.charAt(0) || '?'}</Text>
+                    <Animated.View style={[s.avatar, { transform: [{ scale: pulseAnim }] }]}>
+            {caller?.avatar_url ? (
+              <Image source={{ uri: caller.avatar_url }} style={s.avatarImgFull} />
+            ) : (
+              <Text style={s.avatarTxt}>{caller?.name?.charAt(0) || '?'}</Text>
+            )}
           </Animated.View>
 
           <Text style={s.label}>Incoming Call</Text>
@@ -157,6 +161,7 @@ const s = StyleSheet.create({
                  borderWidth:2, borderColor:'rgba(214,63,110,0.5)',
                  alignItems:'center', justifyContent:'center',
                  shadowColor:C.rose, shadowOpacity:0.5, shadowRadius:20 },
+                 avatarImgFull: { width: 88, height: 88, borderRadius: 44 },
   avatarTxt:   { fontSize:36, color:C.rose, fontFamily:'Outfit_700Bold' },
   label:       { color:C.muted, fontSize:11, letterSpacing:3,
                  textTransform:'uppercase', fontFamily:'Outfit_500Medium' },

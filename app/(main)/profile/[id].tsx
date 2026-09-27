@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState, useCallback } from 'react'
 import { View, Text, TouchableOpacity, StyleSheet,
-         ScrollView } from 'react-native'
-import { useLocalSearchParams, useRouter } from 'expo-router'
+         ScrollView, Image, Dimensions } from 'react-native'
+import { LinearGradient } from 'expo-linear-gradient'
+import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { supabase } from '../../../lib/supabase'
 import { C } from '../../../lib/theme'
@@ -14,7 +15,8 @@ export default function Profile() {
   const [caller, setCaller]       = useState<any>(null)
   const [reviews, setReviews]     = useState<any[]>([])
 
-  useEffect(() => {
+    useFocusEffect(useCallback(() => {
+    setHost(null)
     const load = async () => {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) return
@@ -27,7 +29,7 @@ export default function Profile() {
       setHost(h); setCaller(c); setReviews(r || [])
     }
     load()
-  }, [id])
+  }, [id]))
 
   const getRate = () => {
     if (!caller || !host) return host?.rate || 0
@@ -52,18 +54,34 @@ export default function Profile() {
     })
   }
 
+    if (!host) return (
+    <View style={[s.root, { paddingTop: insets.top, alignItems: 'center', justifyContent: 'center' }]}>
+      <Text style={{ color: C.muted, fontFamily: 'Outfit_400Regular' }}>Loading…</Text>
+    </View>
+  )
+
   return (
     <View style={[s.root, { paddingTop: insets.top }]}>
       <ScrollView>
-        <View style={s.hero}>
+                <View style={s.hero}>
+          {host?.avatar_url ? (
+            <Image source={{ uri: host.avatar_url }} style={s.heroPhoto} />
+          ) : (
+            <View style={[s.heroPhoto, s.heroPhotoFallback]}>
+              <Text style={s.avatarTxt}>{host?.name?.charAt(0)}</Text>
+            </View>
+          )}
           <TouchableOpacity style={s.back} onPress={() => router.back()}>
             <Text style={s.backTxt}>← Back</Text>
           </TouchableOpacity>
-          <View style={s.avatar}>
-            <Text style={s.avatarTxt}>{host?.name?.charAt(0)}</Text>
-          </View>
-          <Text style={s.name}>{host?.name}</Text>
-          <Text style={s.region}>{host?.city || host?.region || '—'}</Text>
+          <LinearGradient
+            colors={['transparent', 'rgba(6,4,14,0.95)']}
+            style={s.heroGradient}>
+            <Text style={s.name}>{host?.name}</Text>
+            <Text style={s.region}>{host?.city || host?.region || '—'}</Text>
+          </LinearGradient>
+        </View>
+        <View style={s.contentBelow}>
           <View style={s.stats}>
             <View style={s.stat}>
               <Text style={s.statVal}>⭐ {avgRating}</Text>
@@ -78,7 +96,6 @@ export default function Profile() {
               <Text style={s.statLabel}>Your rate</Text>
             </View>
           </View>
-        </View>
 
         {host?.bio && (
           <View style={s.section}>
@@ -105,6 +122,7 @@ export default function Profile() {
             ))}
           </View>
         )}
+        </View>
       </ScrollView>
 
       {/* CTA */}
@@ -125,14 +143,19 @@ export default function Profile() {
 
 const s = StyleSheet.create({
   root:         { flex: 1, backgroundColor: C.bg },
-  hero:         { alignItems: 'center', padding: 24, paddingTop: 16, gap: 6 },
-  back:         { alignSelf: 'flex-start', marginBottom: 12 },
-  backTxt:      { color: C.muted, fontFamily: 'Outfit_500Medium', fontSize: 14 },
-  avatar:       { width: 90, height: 90, borderRadius: 45,
-                  backgroundColor: 'rgba(214,63,110,0.2)',
-                  borderWidth: 2, borderColor: 'rgba(214,63,110,0.4)',
-                  alignItems: 'center', justifyContent: 'center' },
-  avatarTxt:    { fontSize: 36, color: C.rose, fontFamily: 'Outfit_700Bold' },
+  hero:         { width: '100%', aspectRatio: 0.85, position: 'relative' },
+  heroPhoto:    { width: '100%', height: '100%' },
+  heroPhotoFallback: { alignItems: 'center', justifyContent: 'center',
+                  backgroundColor: 'rgba(214,63,110,0.2)' },
+  back:         { position: 'absolute', top: 16, left: 16, zIndex: 10,
+                  backgroundColor: 'rgba(6,4,14,0.6)', borderRadius: 99,
+                  paddingHorizontal: 12, paddingVertical: 6 },
+  backTxt:      { color: '#fff', fontFamily: 'Outfit_500Medium', fontSize: 14 },
+  heroGradient: { position: 'absolute', bottom: 0, left: 0, right: 0,
+                  paddingHorizontal: 20, paddingTop: 60, paddingBottom: 16 },
+  contentBelow: { paddingTop: 16, alignItems: 'center' },
+  avatarTxt:    { fontSize: 44, color: C.rose, fontFamily: 'Outfit_700Bold' },
+  avatarImgFull: { width: 90, height: 90, borderRadius: 45 },
   name:         { fontSize: 24, color: C.white, fontFamily: 'Outfit_700Bold', marginTop: 6 },
   region:       { fontSize: 13, color: C.muted, fontFamily: 'Outfit_400Regular' },
   stats:        { flexDirection: 'row', gap: 20, marginTop: 16 },
