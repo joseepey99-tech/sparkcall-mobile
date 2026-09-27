@@ -1,15 +1,26 @@
 import { useState, useEffect } from 'react'
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  SafeAreaView, ScrollView, Alert, Switch, Image,
+  SafeAreaView, ScrollView, Alert, Switch, Image, Modal,
 } from 'react-native'
+import { Play } from 'lucide-react-native'
 import * as ImagePicker from 'expo-image-picker'
 import * as FileSystem from 'expo-file-system/legacy'
 import { decode } from 'base64-arraybuffer'
+import { VideoView, useVideoPlayer } from 'expo-video'
 import { supabase } from '../../lib/supabase'
 import { C } from '../../lib/theme'
 
 const API = 'https://sparkcall.vercel.app'
+function VideoPlayer({ uri }: { uri: string }) {
+  const player = useVideoPlayer(uri, p => { p.play() })
+  return <VideoView player={player} style={{ width: '100%', height: '100%' }} contentFit="contain" nativeControls={false} />
+}
+
+function VideoThumbnail({ uri }: { uri: string }) {
+  const player = useVideoPlayer(uri, p => { p.pause() })
+  return <VideoView player={player} style={{ width: '100%', height: '100%' }} contentFit="cover" nativeControls={false} />
+}
 
 export default function Settings() {
   const [profile, setProfile]       = useState<any>(null)
@@ -62,11 +73,102 @@ export default function Settings() {
       setProfile((p: any) => ({ ...p, avatar_url: avatarUrl }))
         } catch (err: any) {
       console.log('AVATAR UPLOAD ERROR:', JSON.stringify(err, Object.getOwnPropertyNames(err)))
-      Alert.alert('Upload failed', err.message || 'Something went wrong.')
+            Alert.alert('Upload failed', err.message || 'Something went wrong.')
     } finally {
       setUploading(false)
     }
   }
+
+  const MAX_VIDEOS = 4
+  const MAX_DURATION = 30
+  const [videos, setVideos] = useState<any[]>([])
+  const [videosLoading, setVideosLoading] = useState(true)
+  const [videoUploading, setVideoUploading] = useState(false)
+  const [playingIndex, setPlayingIndex] = useState<number | null>(null)
+
+  const loadVideos = async () => {
+    setVideosLoading(true)
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) { setVideosLoading(false); return }
+    const { data } = await supabase.from('profile_videos').select('*').eq('user_id', user.id).order('created_at', { ascending: false })
+    setVideos(data || [])
+    setVideosLoading(false)
+  }
+
+  useEffect(() => { loadVideos() }, [])
+
+  const pickAndUploadVideo = async () => {
+    if (videos.length >= MAX_VIDEOS) {
+      Alert.alert('Limit reached', `You can post up to ${MAX_VIDEOS} videos. Delete one to add another.`)
+      return
+    }
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync()
+    if (!perm.granted) { Alert.alert('Permission needed', 'Please allow photo library access.'); return }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Videos,
+      videoMaxDuration: MAX_DURATION,
+      quality: 0.7,
+    })
+    if (result.canceled) return
+
+    const asset = result.assets[0]
+    if (asset.duration && asset.duration / 1000 > MAX_DURATION + 1) {
+      Alert.alert('Video too long', `Please choose a video under ${MAX_DURATION} seconds.`)
+      return
+    }
+
+    setVideoUploading(true)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+
+      const ext = asset.uri.split('.').pop() || 'mp4'
+      const path = `${user.id}/${Date.now()}.${ext}`
+
+      const { data: { session } } = await supabase.auth.getSession()
+      const uploadUrl = `${process.env.EXPO_PUBLIC_SUPABASE_URL}/storage/v1/object/Videos/${path}`
+
+      const uploadResult = await FileSystem.uploadAsync(uploadUrl, asset.uri, {
+        httpMethod: 'POST',
+        uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+        headers: {
+          Authorization: `Bearer ${session?.access_token}`,
+          apikey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!,
+          'Content-Type': `video/${ext}`,
+        },
+      })
+      if (uploadResult.status !== 200) throw new Error('Video upload failed (status ' + uploadResult.status + ')')
+
+      const { data: urlData } = supabase.storage.from('Videos').getPublicUrl(path)
+
+      const { error: insertError } = await supabase.from('profile_videos').insert({
+        user_id: user.id,
+        video_url: urlData.publicUrl,
+        duration_seconds: asset.duration ? Math.round(asset.duration / 1000) : null,
+      })
+      if (insertError) throw insertError
+
+      loadVideos()
+    } catch (err: any) {
+      Alert.alert('Upload failed', err.message || 'Something went wrong.')
+    } finally {
+      setVideoUploading(false)
+    }
+  }
+
+  const deleteVideo = async (video: any) => {
+    Alert.alert('Delete video', 'Remove this video from your profile?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: async () => {
+        await supabase.from('profile_videos').delete().eq('id', video.id)
+        const path = video.video_url.split('/Videos/')[1]
+        if (path) await supabase.storage.from('Videos').remove([path])
+        loadVideos()
+      }},
+    ])
+  }
+
   const signOut = async () => {
     Alert.alert('Sign out', 'Are you sure you want to sign out?', [
       { text: 'Cancel', style: 'cancel' },
@@ -185,7 +287,45 @@ export default function Settings() {
           <TouchableOpacity style={s.actionRow} onPress={signOut}>
             <Text style={s.actionTxt}>Sign out</Text>
             <Text style={s.chevron}>›</Text>
-          </TouchableOpacity>
+                    </TouchableOpacity>
+        </View>
+
+        {/* My Videos */}
+        <View style={s.section}>
+        <Text style={[s.sectionTitle, { marginBottom: 12 }]}>My Videos ({videos.length}/{MAX_VIDEOS})</Text>
+        <Text style={{ color: C.muted, fontFamily: 'Outfit_400Regular', fontSize: 12, marginBottom: 12 }}>
+          Short clips (max {MAX_DURATION}s) that show who you are.
+        </Text>
+                    {videosLoading ? (
+            <Text style={{ color: C.muted, fontFamily: 'Outfit_400Regular', fontSize: 13 }}>Loading…</Text>
+          ) : (
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+              {videos.map(v => (
+                <View key={v.id} style={s.videoCard}>
+                    <TouchableOpacity onPress={() => setPlayingIndex(videos.indexOf(v))} style={{ flex: 1 }}>
+                    <VideoThumbnail uri={v.video_url} />
+                    <View style={s.videoPlayBadge}>
+                      <Play size={16} color="#fff" fill="#fff" style={{ marginLeft: 2 }} />
+                    </View>
+                    <View style={s.videoDurationBadge}>
+                      <Text style={s.videoDurationTxt}>{v.duration_seconds}s</Text>
+                    </View>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => deleteVideo(v)} style={s.videoDeleteBtn}>
+                    <Text style={{ color: '#fff', fontSize: 12, fontFamily: 'Outfit_700Bold' }}>✕</Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+              {videos.length < MAX_VIDEOS && (
+                <TouchableOpacity onPress={pickAndUploadVideo} disabled={videoUploading} style={s.videoAddTile}>
+                  <Text style={{ fontSize: 22, color: C.rose }}>{videoUploading ? '…' : '+'}</Text>
+                  <Text style={{ color: C.muted, fontSize: 10, marginTop: 4, fontFamily: 'Outfit_400Regular', textAlign: 'center' }}>
+                    Add video
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
         </View>
 
         {/* Danger zone */}
@@ -207,8 +347,44 @@ export default function Settings() {
         </View>
 
         {/* Footer */}
-        <Text style={s.footer}>SparkCall v1.0.0 · support@sparkcall.com</Text>
+                <Text style={s.footer}>SparkCall v1.0.0 · support@sparkcall.com</Text>
       </ScrollView>
+
+            <Modal visible={playingIndex !== null} animationType="fade" transparent={false}>
+        <View style={{ flex: 1, backgroundColor: '#000', justifyContent: 'center' }}>
+          {playingIndex !== null && videos[playingIndex] && (
+            <VideoPlayer key={videos[playingIndex].id} uri={videos[playingIndex].video_url} />
+          )}
+
+          <TouchableOpacity
+            onPress={() => setPlayingIndex(null)}
+            style={{ position: 'absolute', top: 50, right: 20, width: 40, height: 40,
+              borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.15)',
+              alignItems: 'center', justifyContent: 'center' }}>
+            <Text style={{ color: '#fff', fontSize: 18 }}>✕</Text>
+          </TouchableOpacity>
+
+          {playingIndex !== null && playingIndex > 0 && (
+            <TouchableOpacity
+              onPress={() => setPlayingIndex(i => (i !== null ? i - 1 : null))}
+              style={{ position: 'absolute', left: 16, top: '50%', marginTop: -22,
+                width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.15)',
+                alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={{ color: '#fff', fontSize: 20 }}>‹</Text>
+            </TouchableOpacity>
+          )}
+
+          {playingIndex !== null && playingIndex < videos.length - 1 && (
+            <TouchableOpacity
+              onPress={() => setPlayingIndex(i => (i !== null ? i + 1 : null))}
+              style={{ position: 'absolute', right: 16, top: '50%', marginTop: -22,
+                width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.15)',
+                alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={{ color: '#fff', fontSize: 20 }}>›</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </Modal>
     </SafeAreaView>
   )
 }
@@ -263,6 +439,22 @@ const s = StyleSheet.create({
                    padding: 14, alignItems: 'center',
                    borderWidth: 1, borderColor: 'rgba(255,68,85,0.4)' },
   deleteBtnTxt:  { color: '#FF4455', fontFamily: 'Outfit_700Bold', fontSize: 14 },
-  footer:        { color: 'rgba(255,255,255,0.2)', textAlign: 'center',
+    footer:        { color: 'rgba(255,255,255,0.2)', textAlign: 'center',
                    fontFamily: 'Outfit_400Regular', fontSize: 11, marginTop: 12 },
+  videoCard:        { width: 90, height: 130, borderRadius: 12, backgroundColor: C.bg,
+                      borderWidth: 1, borderColor: C.border, overflow: 'hidden' },
+    videoPlayBadge:   { position: 'absolute', top: '50%', left: '50%',
+                      marginTop: -20, marginLeft: -20, width: 40, height: 40, borderRadius: 20,
+                      backgroundColor: 'rgba(255,255,255,0.15)',
+                      borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.4)',
+                      alignItems: 'center', justifyContent: 'center',
+                      shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 8, shadowOffset: { width: 0, height: 2 } },
+  videoDurationBadge: { position: 'absolute', bottom: 6, left: 6,
+                      backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
+  videoDurationTxt: { color: '#fff', fontSize: 10, fontFamily: 'Outfit_500Medium' },
+  videoDeleteBtn:   { position: 'absolute', top: 6, right: 6, width: 22, height: 22, borderRadius: 11,
+                      backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center' },
+  videoAddTile:     { width: 90, height: 130, borderRadius: 12, backgroundColor: C.card,
+                      borderWidth: 1, borderColor: C.border, borderStyle: 'dashed',
+                      alignItems: 'center', justifyContent: 'center' },
 })
