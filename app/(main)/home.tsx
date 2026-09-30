@@ -123,8 +123,17 @@ export default function Home() {
           <Text style={s.greeting}>Discover ✦</Text>
           <Text style={s.sub}>Find your spark</Text>
         </View>
-        <View style={s.balancePill}>
-          <Text style={s.balanceTxt}>⚡ {profile?.credits || 0}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <View style={s.balancePill}>
+            <Text style={s.balanceTxt}>⚡ {profile?.credits || 0}</Text>
+          </View>
+          <TouchableOpacity onPress={() => router.push('/(main)/settings')} style={s.headerAvatar}>
+            {profile?.avatar_url ? (
+              <Image source={{ uri: profile.avatar_url }} style={s.headerAvatarImg} />
+            ) : (
+              <Text style={s.headerAvatarTxt}>{profile?.name?.charAt(0) || '?'}</Text>
+            )}
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -194,6 +203,11 @@ const s = StyleSheet.create({
                       paddingHorizontal: 12, paddingVertical: 7,
                       borderWidth: 1, borderColor: 'rgba(201,164,106,0.3)' },
   balanceTxt:       { color: C.gold, fontFamily: 'Outfit_700Bold', fontSize: 12 },
+  headerAvatar:     { width: 34, height: 34, borderRadius: 17, backgroundColor: 'rgba(214,63,110,0.2)',
+                      borderWidth: 1.5, borderColor: 'rgba(214,63,110,0.5)',
+                      alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  headerAvatarImg:  { width: 34, height: 34, borderRadius: 17 },
+  headerAvatarTxt:  { color: C.rose, fontFamily: 'Outfit_700Bold', fontSize: 13 },
   searchWrap:       { paddingHorizontal: 20, marginBottom: 10 },
   search:           { backgroundColor: C.card, borderWidth: 1, borderColor: C.border,
                       borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11,

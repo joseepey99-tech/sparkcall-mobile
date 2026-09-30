@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { C } from '../../lib/theme'
 import { supabase } from '../../lib/supabase'
 import Svg, { Path } from 'react-native-svg'
+import { MessageCircle } from 'lucide-react-native'
 import IncomingCallMobile from '../../components/IncomingCallMobile'
 
 function CompassIcon({ color }: { color: string }) {
@@ -96,7 +97,8 @@ export default function MainLayout() {
         <Tabs.Screen name="credits"  options={{ title: 'Sparks',   tabBarIcon: ({ color }) => <BoltIcon color={color}/> }}/>
         <Tabs.Screen name="premium"  options={{ title: 'Premium',  tabBarIcon: ({ color }) => <StarIcon color={color}/> }}/>
         <Tabs.Screen name="history"  options={{ title: 'History',  tabBarIcon: ({ color }) => <ClockIcon color={color}/> }}/>
-        <Tabs.Screen name="settings" options={{ title: 'Settings', tabBarIcon: ({ color }) => <GearIcon color={color}/> }}/>
+        <Tabs.Screen name="messages" options={{ title: 'Messages', tabBarIcon: ({ color }) => <MessageCircle size={22} color={color}/> }}/>
+        <Tabs.Screen name="settings" options={{ href: null, tabBarStyle: { display: 'none' } }}/>
         <Tabs.Screen name="profile/[id]" options={{ href: null, tabBarStyle: { display: 'none' } }}/>
         <Tabs.Screen name="chat/[id]"    options={{ href: null, tabBarStyle: { display: 'none' } }}/>
         <Tabs.Screen name="call/[id]"    options={{ href: null, tabBarStyle: { display: 'none' } }}/>

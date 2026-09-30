@@ -3,12 +3,13 @@ import {
   View, Text, TouchableOpacity, StyleSheet,
   SafeAreaView, ScrollView, Alert, Switch, Image, Modal,
 } from 'react-native'
-import { Play } from 'lucide-react-native'
+import { Play, ChevronLeft } from 'lucide-react-native'
 import { COUNTRIES, countryToFlag } from '../../lib/countries'
 import * as ImagePicker from 'expo-image-picker'
 import * as FileSystem from 'expo-file-system/legacy'
 import { decode } from 'base64-arraybuffer'
 import { VideoView, useVideoPlayer } from 'expo-video'
+import { useRouter } from 'expo-router'
 import { supabase } from '../../lib/supabase'
 import { C } from '../../lib/theme'
 
@@ -24,6 +25,7 @@ function VideoThumbnail({ uri }: { uri: string }) {
 }
 
 export default function Settings() {
+  const router = useRouter()
   const [profile, setProfile]       = useState<any>(null)
   const [notifications, setNotifications] = useState(true)
   const [deleting, setDeleting]     = useState(false)
@@ -255,7 +257,14 @@ export default function Settings() {
   return (
     <SafeAreaView style={s.root}>
       <ScrollView contentContainerStyle={s.inner} showsVerticalScrollIndicator={false}>
-        <Text style={s.title}>Settings</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          <TouchableOpacity onPress={() => router.back()}
+            style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: C.card,
+              alignItems: 'center', justifyContent: 'center' }}>
+            <ChevronLeft size={20} color={C.white} />
+          </TouchableOpacity>
+          <Text style={s.title}>Settings</Text>
+        </View>
 
         {/* Profile card */}
         <View style={s.profileCard}>
