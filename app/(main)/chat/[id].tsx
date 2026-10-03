@@ -1,11 +1,16 @@
 import { useState, useEffect, useRef } from 'react'
 import { View, Text, FlatList, TextInput, TouchableOpacity,
-         StyleSheet, KeyboardAvoidingView, Platform, Modal, ScrollView } from 'react-native'
+         StyleSheet, KeyboardAvoidingView, Platform, Modal, ScrollView, Alert, Image } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { supabase } from '../../../lib/supabase'
 import { C } from '../../../lib/theme'
 import { GiftIcon, GIFTS, TIER_LABELS } from '../../../components/GiftIcons'
+import * as ImagePicker from 'expo-image-picker'
+import * as DocumentPicker from 'expo-document-picker'
+import * as FileSystem from 'expo-file-system/legacy'
+import { decode } from 'base64-arraybuffer'
+import { Paperclip } from 'lucide-react-native'
 
 const API = 'https://sparkcall.vercel.app'
 
@@ -62,11 +67,89 @@ export default function ChatScreen() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
     setInput('')
-    await supabase.from('messages').insert({
+        await supabase.from('messages').insert({
       sender_id: user.id,
       receiver_id: id,
       content,
     })
+  }
+
+  const [attachMenuOpen, setAttachMenuOpen] = useState(false)
+  const [viewingImage, setViewingImage] = useState<string | null>(null)
+  const [uploadingAttachment, setUploadingAttachment] = useState(false)
+
+  const uploadAndSendAttachment = async (uri: string, name: string, mediaType: 'image' | 'video' | 'file', mimeType: string, size?: number) => {
+    setUploadingAttachment(true)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const ext = name.split('.').pop() || 'bin'
+      const path = `${user.id}/${Date.now()}.${ext}`
+
+      if (mediaType === 'image') {
+        const base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 })
+        const arrayBuffer = decode(base64)
+        const { error } = await supabase.storage.from('ChatMedia').upload(path, arrayBuffer, { contentType: mimeType })
+        if (error) throw error
+      } else {
+        const { data: { session } } = await supabase.auth.getSession()
+        const uploadUrl = `${process.env.EXPO_PUBLIC_SUPABASE_URL}/storage/v1/object/ChatMedia/${path}`
+        const result = await FileSystem.uploadAsync(uploadUrl, uri, {
+          httpMethod: 'POST',
+          uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+          headers: {
+            Authorization: `Bearer ${session?.access_token}`,
+            apikey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!,
+            'Content-Type': mimeType,
+          },
+        })
+        if (result.status !== 200) throw new Error('Upload failed (status ' + result.status + ')')
+      }
+
+      const { data: urlData } = supabase.storage.from('ChatMedia').getPublicUrl(path)
+
+      await supabase.from('messages').insert({
+        sender_id: user.id,
+        receiver_id: id,
+        content: name,
+        media_url: urlData.publicUrl,
+        media_type: mediaType,
+        file_name: name,
+        file_size: size || null,
+      })
+    } catch (err: any) {
+      Alert.alert('Upload failed', err.message || 'Something went wrong.')
+    } finally {
+      setUploadingAttachment(false)
+    }
+  }
+
+    const pickImageOrVideo = async (source: 'camera' | 'library') => {
+    setAttachMenuOpen(false)
+    let result
+    if (source === 'camera') {
+      const perm = await ImagePicker.requestCameraPermissionsAsync()
+      if (!perm.granted) { Alert.alert('Permission needed', 'Please allow camera access.'); return }
+      result = await ImagePicker.launchCameraAsync({ quality: 0.7 })
+    } else {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync()
+      if (!perm.granted) { Alert.alert('Permission needed', 'Please allow photo library access.'); return }
+      result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.All, quality: 0.7 })
+    }
+    if (result.canceled) return
+    const asset = result.assets[0]
+    const mediaType = asset.type === 'video' ? 'video' : 'image'
+    const name = asset.uri.split('/').pop() || `${mediaType}.${mediaType === 'video' ? 'mp4' : 'jpg'}`
+    const mimeType = mediaType === 'video' ? 'video/mp4' : 'image/jpeg'
+    uploadAndSendAttachment(asset.uri, name, mediaType, mimeType)
+  }
+
+  const pickDocument = async () => {
+    setAttachMenuOpen(false)
+    const result = await DocumentPicker.getDocumentAsync({ type: '*/*', copyToCacheDirectory: true })
+    if (result.canceled) return
+    const asset = result.assets[0]
+    uploadAndSendAttachment(asset.uri, asset.name, 'file', asset.mimeType || 'application/octet-stream', asset.size)
   }
 
   const sendGift = async (gift: typeof GIFTS[0]) => {
@@ -102,13 +185,27 @@ export default function ChatScreen() {
     const gift   = parseGift(item.content)
     return (
       <View style={[s.msgRow, fromMe && s.msgRowMe]}>
-        <View style={[s.bubble, fromMe ? s.bubbleMe : s.bubbleThem,
-          gift && s.giftBubble]}>
-          {gift ? (
+         <View style={[s.bubble, fromMe ? s.bubbleMe : s.bubbleThem,
+          gift && s.giftBubble, item.media_type === 'image' && s.imageBubble]}>
+            {gift ? (
             <View style={s.giftMsgInner}>
               <GiftIcon id={gift.id} size={48}/>
               <Text style={s.giftMsgName}>{gift.name}</Text>
               <Text style={s.giftMsgCost}>⚡{gift.cost}</Text>
+            </View>
+           ) : item.media_type === 'image' ? (
+            <TouchableOpacity onPress={() => setViewingImage(item.media_url)}>
+              <Image source={{ uri: item.media_url }} style={s.attachImg} />
+            </TouchableOpacity>
+          ) : item.media_type === 'video' ? (
+            <View style={s.attachVideo}>
+              <Text style={{ fontSize: 28 }}>▶️</Text>
+              <Text style={s.bubbleTxt} numberOfLines={1}>{item.file_name}</Text>
+            </View>
+          ) : item.media_type === 'file' ? (
+            <View style={s.attachFile}>
+              <Text style={{ fontSize: 20 }}>📎</Text>
+              <Text style={s.bubbleTxt} numberOfLines={1}>{item.file_name}</Text>
             </View>
           ) : (
             <Text style={s.bubbleTxt}>{item.content}</Text>
@@ -148,7 +245,10 @@ export default function ChatScreen() {
       />
 
       {/* Input bar */}
-      <View style={[s.inputBar, { paddingBottom: insets.bottom + 8 }]}>
+        <View style={[s.inputBar, { paddingBottom: insets.bottom + 8 }]}>
+        <TouchableOpacity style={s.giftBtn} onPress={() => setAttachMenuOpen(true)} disabled={uploadingAttachment}>
+          {uploadingAttachment ? <Text style={{ fontSize: 16 }}>…</Text> : <Paperclip size={20} color={C.muted} />}
+        </TouchableOpacity>
         <TouchableOpacity style={s.giftBtn} onPress={() => setGiftOpen(true)}>
           <Text style={{ fontSize: 20 }}>🎁</Text>
         </TouchableOpacity>
@@ -169,6 +269,37 @@ export default function ChatScreen() {
           <Text style={{ color: '#fff', fontSize: 16 }}>➤</Text>
         </TouchableOpacity>
       </View>
+
+            {/* Attachment Menu */}
+      <Modal visible={attachMenuOpen} transparent animationType="slide"
+        onRequestClose={() => setAttachMenuOpen(false)}>
+        <TouchableOpacity style={s.modalBg} activeOpacity={1} onPress={() => setAttachMenuOpen(false)}>
+          <View style={[s.giftPanel, { paddingBottom: insets.bottom + 16 }]}
+            onStartShouldSetResponder={() => true}>
+            <View style={s.giftHeader}>
+              <Text style={s.giftTitle}>Attach</Text>
+              <TouchableOpacity style={s.closeBtn} onPress={() => setAttachMenuOpen(false)}>
+                <Text style={{ color: C.muted, fontSize: 22 }}>×</Text>
+              </TouchableOpacity>
+            </View>
+             <TouchableOpacity onPress={() => pickImageOrVideo('camera')}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14 }}>
+              <Text style={{ fontSize: 22 }}>📷</Text>
+              <Text style={{ color: C.white, fontFamily: 'Outfit_500Medium', fontSize: 15 }}>Take Photo or Video</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => pickImageOrVideo('library')}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14 }}>
+              <Text style={{ fontSize: 22 }}>🖼️</Text>
+              <Text style={{ color: C.white, fontFamily: 'Outfit_500Medium', fontSize: 15 }}>Choose from Library</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={pickDocument}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14 }}>
+              <Text style={{ fontSize: 22 }}>📄</Text>
+              <Text style={{ color: C.white, fontFamily: 'Outfit_500Medium', fontSize: 15 }}>Document</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
 
       {/* Gift Modal */}
       <Modal visible={giftOpen} transparent animationType="slide"
@@ -209,8 +340,26 @@ export default function ChatScreen() {
                   </View>
                 </View>
               ))}
-            </ScrollView>
+                        </ScrollView>
           </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Full-screen image viewer */}
+      <Modal visible={!!viewingImage} transparent animationType="fade"
+        onRequestClose={() => setViewingImage(null)}>
+        <TouchableOpacity style={{ flex: 1, backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' }}
+          activeOpacity={1} onPress={() => setViewingImage(null)}>
+          {viewingImage && (
+            <Image source={{ uri: viewingImage }} style={{ width: '100%', height: '80%' }} resizeMode="contain" />
+          )}
+          <TouchableOpacity
+            onPress={() => setViewingImage(null)}
+            style={{ position: 'absolute', top: 50, right: 20, width: 40, height: 40,
+              borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.15)',
+              alignItems: 'center', justifyContent: 'center' }}>
+            <Text style={{ color: '#fff', fontSize: 18 }}>✕</Text>
+          </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
 
@@ -237,6 +386,10 @@ const s = StyleSheet.create({
   bubbleThem:   { backgroundColor: C.card, borderBottomLeftRadius: 4,
                   borderWidth: 1, borderColor: C.border },
   bubbleTxt:    { color: C.white, fontFamily: 'Outfit_400Regular', fontSize: 14 },
+  attachImg:    { width: 180, height: 180, borderRadius: 18, resizeMode: 'cover' },
+  imageBubble:  { width: 180, height: 180, padding: 0, overflow: 'hidden', backgroundColor: 'transparent', borderWidth: 0 },
+  attachVideo:  { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 4 },
+  attachFile:   { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 4 },
   bubbleTime:   { color: 'rgba(255,255,255,0.4)', fontSize: 10, marginTop: 4, textAlign: 'right' },
   giftBubble:   { alignItems: 'center', paddingVertical: 14 },
   giftMsgInner: { alignItems: 'center', gap: 4 },
