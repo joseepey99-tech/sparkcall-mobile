@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { View, Text, FlatList, TextInput, TouchableOpacity,
          StyleSheet, KeyboardAvoidingView, Platform, Modal, ScrollView, Alert, Image } from 'react-native'
-import { useLocalSearchParams, useRouter } from 'expo-router'
+import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { supabase } from '../../../lib/supabase'
 import { C } from '../../../lib/theme'
@@ -10,12 +10,29 @@ import * as ImagePicker from 'expo-image-picker'
 import * as DocumentPicker from 'expo-document-picker'
 import * as FileSystem from 'expo-file-system/legacy'
 import { decode } from 'base64-arraybuffer'
-import { Paperclip } from 'lucide-react-native'
+import { Paperclip, Play } from 'lucide-react-native'
+import { VideoView, useVideoPlayer } from 'expo-video'
+import VideoPlayerWithControls from '../../../components/VideoPlayerWithControls'
 
 const API = 'https://sparkcall.vercel.app'
+function VideoThumbChat({ uri }: { uri: string }) {
+  const player = useVideoPlayer(uri, p => { p.pause() })
+  return <VideoView player={player} style={{ width: '100%', height: '100%' }} contentFit="cover" nativeControls={false} />
+}
+
+function VideoPlayerChat({ uri }: { uri: string }) {
+  const player = useVideoPlayer(uri, p => { p.play() })
+  return <VideoView player={player} style={{ width: '100%', height: '100%' }} contentFit="contain" nativeControls={false} />
+}
+
+function formatFileSize(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
 
 export default function ChatScreen() {
-  const { id }  = useLocalSearchParams<{ id: string }>()
+  const { id, capturedUri, capturedType } = useLocalSearchParams<{ id: string; capturedUri?: string; capturedType?: 'image' | 'video' }>()
   const router  = useRouter()
   const insets  = useSafeAreaInsets()
   const listRef = useRef<FlatList>(null)
@@ -74,8 +91,18 @@ export default function ChatScreen() {
     })
   }
 
-  const [attachMenuOpen, setAttachMenuOpen] = useState(false)
+    const [attachMenuOpen, setAttachMenuOpen] = useState(false)
+
+  useFocusEffect(useCallback(() => {
+    if (capturedUri && capturedType) {
+      const name = `${capturedType}_${Date.now()}.${capturedType === 'video' ? 'mp4' : 'jpg'}`
+      const mimeType = capturedType === 'video' ? 'video/mp4' : 'image/jpeg'
+      uploadAndSendAttachment(capturedUri, name, capturedType, mimeType)
+      router.setParams({ capturedUri: undefined, capturedType: undefined })
+    }
+  }, [capturedUri, capturedType]))
   const [viewingImage, setViewingImage] = useState<string | null>(null)
+  const [playingVideo, setPlayingVideo] = useState<string | null>(null)
   const [uploadingAttachment, setUploadingAttachment] = useState(false)
 
   const uploadAndSendAttachment = async (uri: string, name: string, mediaType: 'image' | 'video' | 'file', mimeType: string, size?: number) => {
@@ -130,7 +157,7 @@ export default function ChatScreen() {
     if (source === 'camera') {
       const perm = await ImagePicker.requestCameraPermissionsAsync()
       if (!perm.granted) { Alert.alert('Permission needed', 'Please allow camera access.'); return }
-      result = await ImagePicker.launchCameraAsync({ quality: 0.7 })
+      result = await ImagePicker.launchCameraAsync({ mediaTypes: ImagePicker.MediaTypeOptions.All, quality: 0.7 })
     } else {
       const perm = await ImagePicker.requestMediaLibraryPermissionsAsync()
       if (!perm.granted) { Alert.alert('Permission needed', 'Please allow photo library access.'); return }
@@ -185,8 +212,8 @@ export default function ChatScreen() {
     const gift   = parseGift(item.content)
     return (
       <View style={[s.msgRow, fromMe && s.msgRowMe]}>
-         <View style={[s.bubble, fromMe ? s.bubbleMe : s.bubbleThem,
-          gift && s.giftBubble, item.media_type === 'image' && s.imageBubble]}>
+            <View style={[s.bubble, fromMe ? s.bubbleMe : s.bubbleThem,
+          gift && s.giftBubble, gift && s.giftNoBg, (item.media_type === 'image' || item.media_type === 'video') && s.imageBubble]}>
             {gift ? (
             <View style={s.giftMsgInner}>
               <GiftIcon id={gift.id} size={48}/>
@@ -197,15 +224,24 @@ export default function ChatScreen() {
             <TouchableOpacity onPress={() => setViewingImage(item.media_url)}>
               <Image source={{ uri: item.media_url }} style={s.attachImg} />
             </TouchableOpacity>
-          ) : item.media_type === 'video' ? (
-            <View style={s.attachVideo}>
-              <Text style={{ fontSize: 28 }}>▶️</Text>
-              <Text style={s.bubbleTxt} numberOfLines={1}>{item.file_name}</Text>
-            </View>
+                    ) : item.media_type === 'video' ? (
+            <TouchableOpacity onPress={() => setPlayingVideo(item.media_url)} style={s.attachVideo}>
+              <VideoThumbChat uri={item.media_url} />
+              <View style={s.attachVideoPlayBadge}>
+                <Play size={16} color="#fff" fill="#fff" style={{ marginLeft: 2 }} />
+              </View>
+            </TouchableOpacity>
           ) : item.media_type === 'file' ? (
             <View style={s.attachFile}>
-              <Text style={{ fontSize: 20 }}>📎</Text>
-              <Text style={s.bubbleTxt} numberOfLines={1}>{item.file_name}</Text>
+              <View style={s.attachFileIcon}>
+                <Text style={{ fontSize: 20 }}>📄</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={s.attachFileName} numberOfLines={1}>{item.file_name}</Text>
+                {item.file_size && (
+                  <Text style={s.attachFileSize}>{formatFileSize(item.file_size)}</Text>
+                )}
+              </View>
             </View>
           ) : (
             <Text style={s.bubbleTxt}>{item.content}</Text>
@@ -282,7 +318,7 @@ export default function ChatScreen() {
                 <Text style={{ color: C.muted, fontSize: 22 }}>×</Text>
               </TouchableOpacity>
             </View>
-             <TouchableOpacity onPress={() => pickImageOrVideo('camera')}
+            <TouchableOpacity onPress={() => { setAttachMenuOpen(false); router.push({ pathname: '/(main)/camera', params: { chatId: id } }) }}
               style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14 }}>
               <Text style={{ fontSize: 22 }}>📷</Text>
               <Text style={{ color: C.white, fontFamily: 'Outfit_500Medium', fontSize: 15 }}>Take Photo or Video</Text>
@@ -344,8 +380,22 @@ export default function ChatScreen() {
           </View>
         </TouchableOpacity>
       </Modal>
+      {/* Full-screen video player */}
+      <Modal visible={!!playingVideo} transparent animationType="fade"
+        onRequestClose={() => setPlayingVideo(null)}>
+        <View style={{ flex: 1, backgroundColor: '#000', justifyContent: 'center' }}>
+         {playingVideo && <VideoPlayerWithControls uri={playingVideo} />}
+          <TouchableOpacity
+            onPress={() => setPlayingVideo(null)}
+            style={{ position: 'absolute', top: 50, right: 20, width: 40, height: 40,
+              borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.15)',
+              alignItems: 'center', justifyContent: 'center' }}>
+            <Text style={{ color: '#fff', fontSize: 18 }}>✕</Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
 
-      {/* Full-screen image viewer */}
+          {/* Full-screen image viewer */}
       <Modal visible={!!viewingImage} transparent animationType="fade"
         onRequestClose={() => setViewingImage(null)}>
         <TouchableOpacity style={{ flex: 1, backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' }}
@@ -388,10 +438,20 @@ const s = StyleSheet.create({
   bubbleTxt:    { color: C.white, fontFamily: 'Outfit_400Regular', fontSize: 14 },
   attachImg:    { width: 180, height: 180, borderRadius: 18, resizeMode: 'cover' },
   imageBubble:  { width: 180, height: 180, padding: 0, overflow: 'hidden', backgroundColor: 'transparent', borderWidth: 0 },
-  attachVideo:  { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 4 },
-  attachFile:   { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 4 },
+  attachVideo:  { width: '100%', height: '100%', position: 'relative' },
+  attachVideoPlayBadge: { position: 'absolute', top: '50%', left: '50%',
+                      marginTop: -20, marginLeft: -20, width: 40, height: 40, borderRadius: 20,
+                      backgroundColor: 'rgba(255,255,255,0.15)',
+                      borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.4)',
+                      alignItems: 'center', justifyContent: 'center' },
+  attachFile:   { flexDirection: 'row', alignItems: 'center', gap: 10, minWidth: 180 },
+  attachFileIcon: { width: 40, height: 40, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.12)',
+                    alignItems: 'center', justifyContent: 'center' },
+  attachFileName: { color: C.white, fontFamily: 'Outfit_700Bold', fontSize: 13 },
+  attachFileSize: { color: 'rgba(255,255,255,0.6)', fontFamily: 'Outfit_400Regular', fontSize: 11, marginTop: 2 },
   bubbleTime:   { color: 'rgba(255,255,255,0.4)', fontSize: 10, marginTop: 4, textAlign: 'right' },
   giftBubble:   { alignItems: 'center', paddingVertical: 14 },
+  giftNoBg:     { backgroundColor: 'transparent', borderWidth: 0 },
   giftMsgInner: { alignItems: 'center', gap: 4 },
   giftMsgName:  { color: C.white, fontFamily: 'Outfit_700Bold', fontSize: 13, marginTop: 4 },
   giftMsgCost:  { color: C.gold, fontFamily: 'Outfit_700Bold', fontSize: 12 },

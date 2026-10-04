@@ -101,6 +101,8 @@ export default function MainLayout() {
         <Tabs.Screen name="settings" options={{ href: null, tabBarStyle: { display: 'none' } }}/>
         <Tabs.Screen name="profile/[id]" options={{ href: null, tabBarStyle: { display: 'none' } }}/>
         <Tabs.Screen name="chat/[id]"    options={{ href: null, tabBarStyle: { display: 'none' } }}/>
+        <Tabs.Screen name="camera" options={{ href: null, tabBarStyle: { display: 'none' } }}/>
+        <Tabs.Screen name="camera-preview" options={{ href: null, tabBarStyle: { display: 'none' } }}/>
         <Tabs.Screen name="call/[id]"    options={{ href: null, tabBarStyle: { display: 'none' } }}/>
         <Tabs.Screen name="review/[id]"  options={{ href: null, tabBarStyle: { display: 'none' } }}/>
       </Tabs>
