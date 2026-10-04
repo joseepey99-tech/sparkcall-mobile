@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { View, Text, FlatList, TextInput, TouchableOpacity,
-         StyleSheet, KeyboardAvoidingView, Platform, Modal, ScrollView, Alert, Image } from 'react-native'
+         StyleSheet, KeyboardAvoidingView, Platform, Modal, ScrollView, Alert, Image, ActivityIndicator } from 'react-native'
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { supabase } from '../../../lib/supabase'
@@ -10,7 +10,8 @@ import * as ImagePicker from 'expo-image-picker'
 import * as DocumentPicker from 'expo-document-picker'
 import * as FileSystem from 'expo-file-system/legacy'
 import { decode } from 'base64-arraybuffer'
-import { Paperclip, Play } from 'lucide-react-native'
+import { Paperclip, Play, ChevronLeft, Phone, Gift, Send } from 'lucide-react-native'
+import { LinearGradient } from 'expo-linear-gradient'
 import { VideoView, useVideoPlayer } from 'expo-video'
 import VideoPlayerWithControls from '../../../components/VideoPlayerWithControls'
 
@@ -195,6 +196,22 @@ export default function ChatScreen() {
     ])
   }
 
+  const isSameDay = (a: string, b: string) => {
+    const x = new Date(a), y = new Date(b)
+    return x.getFullYear() === y.getFullYear() && x.getMonth() === y.getMonth() && x.getDate() === y.getDate()
+  }
+
+  const dayLabel = (ts: string) => {
+    const d = new Date(ts)
+    const now = new Date()
+    if (isSameDay(ts, now.toISOString())) return 'Today'
+    const yest = new Date(); yest.setDate(now.getDate() - 1)
+    if (isSameDay(ts, yest.toISOString())) return 'Yesterday'
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+    const yr = d.getFullYear() !== now.getFullYear() ? ' ' + d.getFullYear() : ''
+    return days[d.getDay()] + ', ' + d.getDate() + ' ' + months[d.getMonth()] + yr
+  }
   const fmtTime = (ts: string) => {
     const d = new Date(ts)
     return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`
@@ -207,13 +224,21 @@ export default function ChatScreen() {
     } catch { return null }
   }
 
-  const renderMsg = ({ item }: any) => {
+  const renderBubble = ({ item, index }: any) => {
     const fromMe = item.sender_id === me?.id
     const gift   = parseGift(item.content)
+    const nextMsg = messages[index + 1]
+    const GROUP_MS = 5 * 60 * 1000
+    const sameAsNext = !!nextMsg && nextMsg.sender_id === item.sender_id && (new Date(nextMsg.created_at).getTime() - new Date(item.created_at).getTime()) < GROUP_MS
+    const isMedia = item.media_type === 'image' || item.media_type === 'video'
     return (
-      <View style={[s.msgRow, fromMe && s.msgRowMe]}>
+      <View style={[s.msgRow, fromMe && s.msgRowMe, { marginBottom: sameAsNext ? 2 : 10 }]}>
             <View style={[s.bubble, fromMe ? s.bubbleMe : s.bubbleThem,
-          gift && s.giftBubble, gift && s.giftNoBg, (item.media_type === 'image' || item.media_type === 'video') && s.imageBubble]}>
+          gift && s.giftBubble, gift && s.giftNoBg, isMedia && s.imageBubble,
+          sameAsNext && (fromMe ? s.noTailMe : s.noTailThem)]}>
+            {fromMe && !gift && !isMedia && (
+              <LinearGradient colors={[C.rose, '#B8305F']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+            )}
             {gift ? (
             <View style={s.giftMsgInner}>
               <GiftIcon id={gift.id} size={48}/>
@@ -246,26 +271,41 @@ export default function ChatScreen() {
           ) : (
             <Text style={s.bubbleTxt}>{item.content}</Text>
           )}
-          <Text style={s.bubbleTime}>{fmtTime(item.created_at)}</Text>
+          <Text style={[s.bubbleTime, isMedia && s.mediaTime]}>{fmtTime(item.created_at)}</Text>
         </View>
       </View>
     )
   }
 
+  const hostOnline = !!host?.last_seen && (Date.now() - new Date(host.last_seen).getTime()) < 45000
   return (
     <KeyboardAvoidingView style={s.root} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
 
       {/* Header */}
       <View style={[s.header, { paddingTop: insets.top + 8 }]}>
         <TouchableOpacity style={s.backBtn} onPress={() => router.back()}>
-          <Text style={s.backTxt}>← Back</Text>
+          <ChevronLeft size={20} color={C.white} />
         </TouchableOpacity>
-        <Text style={s.headerName}>{host?.name}</Text>
-        <TouchableOpacity style={s.callPill}
+        <TouchableOpacity style={s.headerCenter} activeOpacity={0.7}
+          onPress={() => router.push({ pathname: '/(main)/profile/[id]', params: { id } })}>
+          <View style={s.headerAvatar}>
+            {host?.avatar_url ? (
+              <Image source={{ uri: host.avatar_url }} style={s.headerAvatarImg} />
+            ) : (
+              <Text style={s.headerAvatarTxt}>{host?.name?.charAt(0) || '?'}</Text>
+            )}
+            {hostOnline && <View style={s.onlineDot} />}
+          </View>
+          <View>
+            <Text style={s.headerName} numberOfLines={1}>{host?.name}</Text>
+            <Text style={[s.headerSub, hostOnline && { color: '#3DD68C' }]}>{hostOnline ? 'Online' : 'Offline'}</Text>
+          </View>
+        </TouchableOpacity>
+        <TouchableOpacity style={s.callBtn}
           onPress={() => router.push({ pathname: '/(main)/call/[id]', params: {
             id, callerCredits: String(me?.credits ?? 0), callerPremium: me?.premium ?? ''
           }})}>
-          <Text style={s.callPillTxt}>Call</Text>
+          <Phone size={18} color="#fff" />
         </TouchableOpacity>
       </View>
 
@@ -274,22 +314,27 @@ export default function ChatScreen() {
         ref={listRef}
         data={messages}
         keyExtractor={item => item.id}
-        renderItem={renderMsg}
+        renderItem={({ item, index }: any) => (
+          <View>
+            {(index === 0 || !isSameDay(messages[index - 1].created_at, item.created_at)) && (
+              <View style={s.daySep}><Text style={s.daySepTxt}>{dayLabel(item.created_at)}</Text></View>
+            )}
+            {renderBubble({ item, index })}
+          </View>
+        )}
         contentContainerStyle={s.listContent}
         onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
         showsVerticalScrollIndicator={false}
       />
 
       {/* Input bar */}
-        <View style={[s.inputBar, { paddingBottom: insets.bottom + 8 }]}>
-        <TouchableOpacity style={s.giftBtn} onPress={() => setAttachMenuOpen(true)} disabled={uploadingAttachment}>
-          {uploadingAttachment ? <Text style={{ fontSize: 16 }}>…</Text> : <Paperclip size={20} color={C.muted} />}
-        </TouchableOpacity>
-        <TouchableOpacity style={s.giftBtn} onPress={() => setGiftOpen(true)}>
-          <Text style={{ fontSize: 20 }}>🎁</Text>
-        </TouchableOpacity>
+      <View style={[s.inputBar, { paddingBottom: insets.bottom + 8 }]}>
+        <View style={s.inputWrap}>
+          <TouchableOpacity style={s.inputIconBtn} onPress={() => setAttachMenuOpen(true)} disabled={uploadingAttachment}>
+            {uploadingAttachment ? <ActivityIndicator size="small" color={C.muted} /> : <Paperclip size={20} color={C.muted} />}
+          </TouchableOpacity>
         <TextInput
-          style={s.input}
+          style={s.inputField}
           value={input}
           onChangeText={setInput}
           onSubmitEditing={() => sendMessage(input)}
@@ -298,11 +343,15 @@ export default function ChatScreen() {
           placeholderTextColor={C.muted}
           multiline
         />
+          <TouchableOpacity style={s.inputIconBtn} onPress={() => setGiftOpen(true)}>
+            <Gift size={20} color={C.gold} />
+          </TouchableOpacity>
+        </View>
         <TouchableOpacity
           style={[s.sendBtn, !input.trim() && s.sendBtnOff]}
           onPress={() => sendMessage(input)}
           disabled={!input.trim()}>
-          <Text style={{ color: '#fff', fontSize: 16 }}>➤</Text>
+          <Send size={18} color={input.trim() ? '#fff' : C.muted} />
         </TouchableOpacity>
       </View>
 
@@ -423,16 +472,25 @@ const s = StyleSheet.create({
                   paddingHorizontal: 16, paddingBottom: 12,
                   borderBottomWidth: 1, borderBottomColor: C.border,
                   backgroundColor: C.card },
-  backBtn:      { padding: 4 },
+  backBtn:      { width: 40, height: 40, borderRadius: 20, backgroundColor: C.card, alignItems: 'center', justifyContent: 'center' },
   backTxt:      { color: C.rose, fontFamily: 'Outfit_500Medium', fontSize: 14 },
   headerName:   { color: C.white, fontFamily: 'Outfit_700Bold', fontSize: 16 },
+  headerCenter: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10, marginHorizontal: 12 },
+  headerAvatar: { width: 38, height: 38, borderRadius: 19, backgroundColor: 'rgba(214,63,110,0.2)', borderWidth: 1, borderColor: 'rgba(214,63,110,0.4)', alignItems: 'center', justifyContent: 'center' },
+  headerAvatarImg: { width: 36, height: 36, borderRadius: 18 },
+  headerAvatarTxt: { color: C.rose, fontFamily: 'Outfit_700Bold', fontSize: 15 },
+  onlineDot:    { position: 'absolute', right: -1, bottom: -1, width: 11, height: 11, borderRadius: 6, backgroundColor: '#3DD68C', borderWidth: 2, borderColor: C.bg },
+  headerSub:    { color: C.muted, fontFamily: 'Outfit_400Regular', fontSize: 11, marginTop: 1 },
+  callBtn:      { width: 40, height: 40, borderRadius: 20, backgroundColor: C.rose, alignItems: 'center', justifyContent: 'center' },
   callPill:     { backgroundColor: C.rose, borderRadius: 99, paddingHorizontal: 14, paddingVertical: 6 },
   callPillTxt:  { color: '#fff', fontFamily: 'Outfit_700Bold', fontSize: 13 },
-  listContent:  { padding: 16, gap: 8 },
+  listContent:  { padding: 16, gap: 0 },
+  daySep:       { alignSelf: 'center', backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 99, paddingHorizontal: 12, paddingVertical: 4, marginVertical: 12 },
+  daySepTxt:    { color: C.muted, fontFamily: 'Outfit_500Medium', fontSize: 11 },
   msgRow:       { flexDirection: 'row', marginBottom: 8 },
   msgRowMe:     { justifyContent: 'flex-end' },
-  bubble:       { maxWidth: '75%', padding: 10, paddingHorizontal: 14, borderRadius: 18 },
-  bubbleMe:     { backgroundColor: C.rose, borderBottomRightRadius: 4 },
+  bubble:       { maxWidth: '78%', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 16 },
+  bubbleMe:     { backgroundColor: C.rose, borderBottomRightRadius: 4, overflow: 'hidden' },
   bubbleThem:   { backgroundColor: C.card, borderBottomLeftRadius: 4,
                   borderWidth: 1, borderColor: C.border },
   bubbleTxt:    { color: C.white, fontFamily: 'Outfit_400Regular', fontSize: 14 },
@@ -449,7 +507,10 @@ const s = StyleSheet.create({
                     alignItems: 'center', justifyContent: 'center' },
   attachFileName: { color: C.white, fontFamily: 'Outfit_700Bold', fontSize: 13 },
   attachFileSize: { color: 'rgba(255,255,255,0.6)', fontFamily: 'Outfit_400Regular', fontSize: 11, marginTop: 2 },
-  bubbleTime:   { color: 'rgba(255,255,255,0.4)', fontSize: 10, marginTop: 4, textAlign: 'right' },
+  bubbleTime:   { color: 'rgba(255,255,255,0.55)', fontSize: 10, marginTop: 2, textAlign: 'right' },
+  mediaTime:    { position: 'absolute', right: 8, bottom: 8, marginTop: 0, backgroundColor: 'rgba(0,0,0,0.45)', color: '#fff', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8, overflow: 'hidden' },
+  noTailMe:     { borderBottomRightRadius: 16 },
+  noTailThem:   { borderBottomLeftRadius: 16 },
   giftBubble:   { alignItems: 'center', paddingVertical: 14 },
   giftNoBg:     { backgroundColor: 'transparent', borderWidth: 0 },
   giftMsgInner: { alignItems: 'center', gap: 4 },
@@ -460,6 +521,9 @@ const s = StyleSheet.create({
                   borderTopWidth: 1, borderTopColor: C.border,
                   backgroundColor: C.card },
   giftBtn:      { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  inputWrap:    { flex: 1, flexDirection: 'row', alignItems: 'flex-end', backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: C.border, borderRadius: 22, paddingHorizontal: 4, minHeight: 44 },
+  inputIconBtn: { width: 36, height: 42, alignItems: 'center', justifyContent: 'center' },
+  inputField:   { flex: 1, paddingVertical: 11, paddingHorizontal: 4, color: C.white, fontFamily: 'Outfit_400Regular', fontSize: 14, maxHeight: 110 },
   input:        { flex: 1, backgroundColor: 'rgba(255,255,255,0.06)',
                   borderWidth: 1, borderColor: C.border, borderRadius: 20,
                   paddingHorizontal: 14, paddingVertical: 10,
