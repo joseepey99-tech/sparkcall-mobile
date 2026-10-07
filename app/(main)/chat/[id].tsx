@@ -14,6 +14,7 @@ import { Paperclip, Play, ChevronLeft, Phone, Gift, Send } from 'lucide-react-na
 import { LinearGradient } from 'expo-linear-gradient'
 import { VideoView, useVideoPlayer } from 'expo-video'
 import VideoPlayerWithControls from '../../../components/VideoPlayerWithControls'
+import { chatPath, getSignedUrls } from '../../../lib/signedUrl'
 
 const API = 'https://sparkcall.vercel.app'
 function VideoThumbChat({ uri }: { uri: string }) {
@@ -41,6 +42,19 @@ export default function ChatScreen() {
   const [host, setHost]         = useState<any>(null)
   const [me, setMe]             = useState<any>(null)
   const [messages, setMessages] = useState<any[]>([])
+  const [signed, setSigned] = useState<Record<string, string>>({})
+  const requested = useRef<Set<string>>(new Set())
+
+  useEffect(() => {
+    const paths = Array.from(new Set(messages.map(chatPath).filter((p: any) => !!p))) as string[]
+    const todo = paths.filter(p => !requested.current.has(p))
+    if (!todo.length) return
+    todo.forEach(p => requested.current.add(p))
+    getSignedUrls(todo).then(map => {
+      todo.forEach(p => { if (!map[p]) requested.current.delete(p) })
+      setSigned(prev => ({ ...prev, ...map }))
+    })
+  }, [messages])
   const [input, setInput]       = useState('')
   const [giftOpen, setGiftOpen] = useState(false)
   const [credits, setCredits]   = useState(0)
@@ -141,6 +155,7 @@ export default function ChatScreen() {
         receiver_id: id,
         content: name,
         media_url: urlData.publicUrl,
+        media_path: path,
         media_type: mediaType,
         file_name: name,
         file_size: size || null,
@@ -231,6 +246,7 @@ export default function ChatScreen() {
     const GROUP_MS = 5 * 60 * 1000
     const sameAsNext = !!nextMsg && nextMsg.sender_id === item.sender_id && (new Date(nextMsg.created_at).getTime() - new Date(item.created_at).getTime()) < GROUP_MS
     const isMedia = item.media_type === 'image' || item.media_type === 'video'
+    const mediaUrl = signed[chatPath(item) || ""]
     return (
       <View style={[s.msgRow, fromMe && s.msgRowMe, { marginBottom: sameAsNext ? 2 : 10 }]}>
             <View style={[s.bubble, fromMe ? s.bubbleMe : s.bubbleThem,
@@ -246,12 +262,12 @@ export default function ChatScreen() {
               <Text style={s.giftMsgCost}>⚡{gift.cost}</Text>
             </View>
            ) : item.media_type === 'image' ? (
-            <TouchableOpacity onPress={() => setViewingImage(item.media_url)}>
-              <Image source={{ uri: item.media_url }} style={s.attachImg} />
+            <TouchableOpacity onPress={() => setViewingImage(mediaUrl)}>
+              {mediaUrl ? <Image source={{ uri: mediaUrl }} style={s.attachImg} /> : null}
             </TouchableOpacity>
                     ) : item.media_type === 'video' ? (
-            <TouchableOpacity onPress={() => setPlayingVideo(item.media_url)} style={s.attachVideo}>
-              <VideoThumbChat uri={item.media_url} />
+            <TouchableOpacity onPress={() => setPlayingVideo(mediaUrl)} style={s.attachVideo}>
+              {mediaUrl ? <VideoThumbChat uri={mediaUrl} /> : null}
               <View style={s.attachVideoPlayBadge}>
                 <Play size={16} color="#fff" fill="#fff" style={{ marginLeft: 2 }} />
               </View>
@@ -313,6 +329,7 @@ export default function ChatScreen() {
       <FlatList
         ref={listRef}
         data={messages}
+        extraData={signed}
         keyExtractor={item => item.id}
         renderItem={({ item, index }: any) => (
           <View>
