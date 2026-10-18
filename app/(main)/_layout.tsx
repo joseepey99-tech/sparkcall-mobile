@@ -99,6 +99,7 @@ export default function MainLayout() {
         <Tabs.Screen name="history"  options={{ title: 'History',  tabBarIcon: ({ color }) => <ClockIcon color={color}/> }}/>
         <Tabs.Screen name="messages" options={{ title: 'Messages', tabBarIcon: ({ color }) => <MessageCircle size={22} color={color}/> }}/>
         <Tabs.Screen name="settings" options={{ href: null, tabBarStyle: { display: 'none' } }}/>
+        <Tabs.Screen name="earnings" options={{ href: null, tabBarStyle: { display: 'none' } }}/>
         <Tabs.Screen name="profile/[id]" options={{ href: null, tabBarStyle: { display: 'none' } }}/>
         <Tabs.Screen name="chat/[id]"    options={{ href: null, tabBarStyle: { display: 'none' } }}/>
         <Tabs.Screen name="camera" options={{ href: null, tabBarStyle: { display: 'none' } }}/>

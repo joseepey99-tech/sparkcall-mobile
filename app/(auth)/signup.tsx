@@ -41,14 +41,8 @@ export default function Signup() {
 
   const signup = async () => {
     setLoading(true)
-    const { data, error } = await supabase.auth.signUp({ email, password })
+    const { data, error } = await supabase.auth.signUp({ email, password, options: { data: { name, gender } } })
     if (error) { Alert.alert('Error', error.message); setLoading(false); return }
-    await supabase.from('profiles').upsert({
-      id: data.user!.id,
-      name, email, gender, dob, region,
-      interests, role, credits: 100,
-      rate: role === 'host' ? 10 : null,
-    })
     setLoading(false)
     Alert.alert('Welcome!', 'Check your email to confirm your account.')
     router.replace('/(auth)/login')

@@ -54,7 +54,7 @@ export default function Review() {
         <Text style={s.title}>Rate your call ✦</Text>
         <View style={s.summary}>
           <Text style={s.sumItem}>⏱ {fmt(Number(duration))}</Text>
-          <Text style={s.sumItem}>⚡ {Number(cost)} spent</Text>
+          <Text style={s.sumItem}>{isHost === 'true' ? '⚡ ' + Math.floor(Number(cost) * 0.7) + ' earned' : '⚡ ' + Number(cost) + ' spent'}</Text>
         </View>
         <View style={s.stars}>
           {[1,2,3,4,5].map(n => (

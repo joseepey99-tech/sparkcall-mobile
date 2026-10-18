@@ -5,7 +5,7 @@ import { supabase } from '../lib/supabase'
 import { C } from '../lib/theme'
 import { Phone, PhoneOff } from 'lucide-react-native'
 
-const API = 'https://sparkcall.vercel.app'
+const API = 'https://sparkcall.vercel.app'; async function authHeaders() { const { data: { session } } = await supabase.auth.getSession(); return { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` } }
 
 export default function IncomingCallMobile() {
   const router = useRouter()
@@ -38,7 +38,7 @@ export default function IncomingCallMobile() {
         }, async (payload) => {
           if (payload.new.status !== 'pending') return
           const { data: callerProfile } = await supabase
-            .from('profiles').select('*').eq('id', payload.new.caller_id).single()
+            .from('public_profiles').select('*').eq('id', payload.new.caller_id).single()
           setCaller(callerProfile)
           setCall(payload.new)
           setSeconds(30)
@@ -82,7 +82,7 @@ export default function IncomingCallMobile() {
     setLoading(true)
     clearInterval(timerRef.current)
     await fetch(`${API}/api/calls/accept`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: await authHeaders(),
       body: JSON.stringify({ callId: call.id }),
     })
     dismiss()
@@ -102,7 +102,7 @@ export default function IncomingCallMobile() {
     if (!call) return
     clearInterval(timerRef.current)
     await fetch(`${API}/api/calls/reject`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: await authHeaders(),
       body: JSON.stringify({ callId: call.id }),
     })
     dismiss()

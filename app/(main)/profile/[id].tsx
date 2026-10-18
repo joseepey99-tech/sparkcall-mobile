@@ -36,7 +36,7 @@ export default function Profile() {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) return
         const [{ data: h }, { data: c }, { data: r }, { data: v }] = await Promise.all([
-        supabase.from('profiles').select('*').eq('id', id).single(),
+        supabase.from('public_profiles').select('*').eq('id', id).single(),
         supabase.from('profiles').select('*').eq('id', session.user.id).single(),
         supabase.from('reviews').select('*').eq('host_id', id)
           .order('created_at', { ascending: false }).limit(5),

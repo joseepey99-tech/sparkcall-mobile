@@ -349,6 +349,12 @@ export default function Settings() {
         {/* Account */}
         <View style={s.section}>
           <Text style={s.sectionTitle}>Account</Text>
+          {profile?.is_host && (
+          <TouchableOpacity style={s.actionRow} onPress={() => router.push('/(main)/earnings' as any)}>
+            <Text style={s.actionTxt}>Earnings and payouts</Text>
+            <Text style={s.chevron}>›</Text>
+          </TouchableOpacity>
+          )}
           <TouchableOpacity style={s.actionRow} onPress={signOut}>
             <Text style={s.actionTxt}>Sign out</Text>
             <Text style={s.chevron}>›</Text>

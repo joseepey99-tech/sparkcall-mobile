@@ -65,7 +65,7 @@ export default function ChatScreen() {
       if (!user) return
 
       const [{ data: h }, { data: m }] = await Promise.all([
-        supabase.from('profiles').select('*').eq('id', id).single(),
+        supabase.from('public_profiles').select('*').eq('id', id).single(),
         supabase.from('profiles').select('*').eq('id', user.id).single(),
       ])
       setHost(h); setMe(m); setCredits(m?.credits ?? 0)
@@ -201,14 +201,8 @@ export default function ChatScreen() {
     setGiftOpen(false)
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
-    await Promise.all([
-      supabase.from('gifts').insert({
-        sender_id: user.id, receiver_id: id,
-        gift_type: gift.id, cost_sparks: gift.cost,
-      }),
-      supabase.rpc('add_sparks', { user_id: user.id, amount: -gift.cost }),
-      sendMessage(JSON.stringify({ type: 'gift', id: gift.id, name: gift.name, cost: gift.cost }), true),
-    ])
+    const { error } = await supabase.rpc('send_gift', { p_receiver: id, p_gift_id: gift.id, p_call_id: null })
+    if (error) setCredits(c => c + gift.cost)
   }
 
   const isSameDay = (a: string, b: string) => {

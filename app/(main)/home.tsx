@@ -25,6 +25,7 @@ export default function Home() {
   const channelRef = useRef<any>(null)
 
   useEffect(() => { fetchData() }, [region])
+  useEffect(() => { const iv = setInterval(() => { fetchData(true) }, 20000); return () => clearInterval(iv) }, [region])
 
   useEffect(() => {
     channelRef.current = supabase
@@ -41,14 +42,14 @@ export default function Home() {
     return () => { supabase.removeChannel(channelRef.current) }
   }, [])
 
-  const fetchData = async () => {
-    setLoading(true)
+  const fetchData = async (quiet?: any) => {
+    if (quiet !== true) setLoading(true)
     const { data: { user } } = await supabase.auth.getUser()
     const [{ data: prof }, { data: all }] = await Promise.all([
       supabase.from('profiles').select('*').eq('id', user!.id).single(),
       region === 'All'
-        ? supabase.from('profiles').select('*').neq('id', user!.id)
-        : supabase.from('profiles').select('*').neq('id', user!.id),
+        ? supabase.from('public_profiles').select('*').neq('id', user!.id)
+        : supabase.from('public_profiles').select('*').neq('id', user!.id),
     ])
     setProfile(prof)
     setUsers(all || [])

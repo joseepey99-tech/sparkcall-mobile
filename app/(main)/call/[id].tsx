@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { View, Text, TouchableOpacity, TextInput, StyleSheet, Animated, Dimensions, Image } from 'react-native'
 import { WebView } from 'react-native-webview'
-import { useLocalSearchParams, useRouter } from 'expo-router'
+import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router'
 import { Mic, MicOff, Video, VideoOff, Gift, PhoneOff, Send, FlipHorizontal, EyeOff, Eye } from 'lucide-react-native'
 import { supabase } from '../../../lib/supabase'
 import { GiftIcon, GIFTS, TIER_LABELS } from '../../../components/GiftIcons'
@@ -12,12 +12,27 @@ import { Camera } from 'expo-camera'
 import { Audio } from 'expo-av'
 import * as ScreenCapture from 'expo-screen-capture'
 
-const API = 'https://sparkcall.vercel.app'
-const { width: SW } = Dimensions.get('window')
+const API = 'https://sparkcall.vercel.app'; async function authHeaders() { const { data: { session } } = await supabase.auth.getSession(); return { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` } }const { width: SW } = Dimensions.get('window')
 
 type CallPhase = 'calling' | 'accepted' | 'rejected' | 'timeout'
 
+// Hidden tab screens stay mounted. Rebuild the whole call screen every time it gains focus
+// (fresh state for each call) and remove it when it loses focus (stops video, audio, camera).
 export default function CallScreen() {
+  const [instance, setInstance] = useState(0)
+  const [active, setActive] = useState(false)
+
+  useFocusEffect(useCallback(() => {
+    setInstance(n => n + 1)
+    setActive(true)
+    return () => setActive(false)
+  }, []))
+
+  if (!active) return <View style={{ flex: 1, backgroundColor: '#000' }} />
+  return <CallScreenInner key={instance} />
+}
+
+function CallScreenInner() {
   const router  = useRouter()
   const insets  = useSafeAreaInsets()
 const { id, callerCredits, callerPremium, isHost, callId: routeCallId, roomUrl: routeRoomUrl } = useLocalSearchParams<{
@@ -29,6 +44,11 @@ const { id, callerCredits, callerPremium, isHost, callId: routeCallId, roomUrl: 
   const timerRef    = useRef<ReturnType<typeof setInterval>>()
   const timeoutRef  = useRef<ReturnType<typeof setTimeout>>()
   const channelRef  = useRef<any>(null)
+  useEffect(() => () => {
+    clearInterval(timerRef.current)
+    clearTimeout(timeoutRef.current)
+    channelRef.current?.unsubscribe()
+  }, [])
   const msgIdRef    = useRef(0)
   const chatScrollRef = useRef<any>(null)
   const pulseAnim   = useRef(new Animated.Value(1)).current
@@ -60,6 +80,13 @@ const { id, callerCredits, callerPremium, isHost, callId: routeCallId, roomUrl: 
 
     // Screen capture protection
   const [captureWarning, setCaptureWarning] = useState(false)
+  const [focused, setFocused] = useState(true)
+
+  // Hidden tab screens stay mounted, so stop the call video as soon as this screen loses focus
+  useFocusEffect(useCallback(() => {
+    setFocused(true)
+    return () => setFocused(false)
+  }, []))
 
   useEffect(() => {
     ScreenCapture.preventScreenCaptureAsync()
@@ -129,7 +156,7 @@ const initCall = async () => {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.replace('/(auth)/login'); return }
       setUserId(user.id); userIdRef.current = user.id
-      const { data: h } = await supabase.from('profiles').select('*').eq('id', id).single()
+      const { data: h } = await supabase.from('public_profiles').select('*').eq('id', id).single()
       setHost(h)
 
       const amHost = isHost === 'true'
@@ -157,7 +184,7 @@ const initCall = async () => {
               if (!navigating.current) {
                 navigating.current = true
                 const spent = sparksSpent()
-                router.replace({ pathname: '/(main)/review/[id]', params: { id: id as string, duration: seconds, cost: spent, isHost: 'true', callId: routeCallId } })
+                authHeaders().then(h => fetch(`${API}/api/calls/end`, { method: 'POST', headers: h, body: JSON.stringify({ callId: routeCallId }) })).then(r => r.json()).catch(() => null).then(out => {  router.replace({ pathname: '/(main)/review/[id]', params: { id: id as string, duration: out?.success ? out.seconds : seconds, cost: out?.success ? out.sparks : spent, isHost: 'true', callId: routeCallId } }) })
               }
             }
           })
@@ -224,7 +251,7 @@ const initCall = async () => {
             if (!navigating.current) {
               navigating.current = true
               const spent = sparksSpent()
-              router.replace({ pathname: '/(main)/review/[id]', params: { id: id as string, duration: seconds, cost: spent, isHost: isHost || 'false', callId: callId || '' } })
+              authHeaders().then(h => fetch(`${API}/api/calls/end`, { method: 'POST', headers: h, body: JSON.stringify({ callId }) })).then(r => r.json()).catch(() => null).then(out => { router.replace({ pathname: '/(main)/review/[id]', params: { id: id as string, duration: out?.success ? out.seconds : seconds, cost: out?.success ? out.sparks : spent, isHost: isHost || 'false', callId: callId || '' } }) })
             }
           }
         })
@@ -248,7 +275,7 @@ const initCall = async () => {
     ScreenCapture.allowScreenCaptureAsync()
     channelRef.current?.unsubscribe()
     await fetch(`${API}/api/calls/reject`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: await authHeaders(),
       body: JSON.stringify({ callId }),
     })
     if (!navigating.current) { navigating.current = true; router.back() }
@@ -297,6 +324,15 @@ const initCall = async () => {
   }
 
   const sendGift = async (gift: typeof GIFTS[0]) => {
+    if (isHost === 'true') {
+      setGiftOpen(false)
+      const { error } = await supabase.rpc('request_gift', { p_receiver: id as string, p_gift_id: gift.id, p_call_id: callId })
+      if (error) {
+        const { Alert } = require('react-native')
+        Alert.alert('Gift request', error.message.includes('too early') ? 'You can ask for a gift after the first minute.' : error.message.includes('wait') ? 'Please wait a minute before asking again.' : error.message)
+      }
+      return
+    }
     if (credits < gift.cost) return
     setCredits(c => c - gift.cost)
     setFlyingGift(gift)
@@ -304,29 +340,50 @@ const initCall = async () => {
     addMessage(JSON.stringify({ type: 'gift', id: gift.id, name: gift.name, cost: gift.cost }), true)
     setTimeout(() => setFlyingGift(null), 2200)
     if (!userId) return
-    await Promise.all([
-      supabase.from('gifts').insert({ sender_id: userId, receiver_id: id, gift_type: gift.id, cost_sparks: gift.cost }),
-      supabase.rpc('add_sparks', { user_id: userId, amount: -gift.cost }),
-      supabase.from('messages').insert({ sender_id: userId, receiver_id: id as string, call_id: callId, content: JSON.stringify({ type: 'gift', id: gift.id, name: gift.name, cost: gift.cost }) }),
-    ])
+    const { error: giftErr } = await supabase.rpc('send_gift', { p_receiver: id as string, p_gift_id: gift.id, p_call_id: callId })
+    if (giftErr) setCredits(c => c + gift.cost)
   }
 
-    const endCall = async () => {
+    const [answeredReqs, setAnsweredReqs] = useState<Record<string, boolean>>({})
+  const acceptRequest = async (msg: any, g: any) => {
+    setAnsweredReqs(a => ({ ...a, [msg.id]: true }))
+    if (credits < g.cost) return
+    setCredits(c => c - g.cost)
+    const { error } = await supabase.rpc('send_gift', { p_receiver: id as string, p_gift_id: g.id, p_call_id: callId })
+    if (error) setCredits(c => c + g.cost)
+  }
+  const renderReq = (msg: any, g: any) => (
+    <View style={{ alignItems: 'center', gap: 4 }}>
+      <GiftIcon id={g.id} size={36}/>
+      <Text style={[s.msgTxt, { fontSize: 11, color: C.gold }]}>{host?.name?.split(' ')[0] || 'Host'} would like a {g.name} ⚡{g.cost}</Text>
+      {!msg.fromMe && !answeredReqs[msg.id] && (
+        <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
+          <TouchableOpacity onPress={() => acceptRequest(msg, g)} style={{ backgroundColor: C.rose, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 }}><Text style={{ color: '#fff', fontSize: 12 }}>Send</Text></TouchableOpacity>
+          <TouchableOpacity onPress={() => setAnsweredReqs(a => ({ ...a, [msg.id]: true }))} style={{ paddingHorizontal: 12, paddingVertical: 6 }}><Text style={{ color: C.muted, fontSize: 12 }}>Not now</Text></TouchableOpacity>
+        </View>
+      )}
+    </View>
+  )
+
+  const endCall = async () => {
     if (ending || !callReady) return
     setEnding(true)
     ScreenCapture.allowScreenCaptureAsync()
     clearInterval(timerRef.current)
     channelRef.current?.unsubscribe()
-    const spent = sparksSpent()
+        let spent = sparksSpent()
+    let finalSeconds = seconds
     try {
-      await fetch(`${API}/api/calls/end`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ callId, durationSeconds: seconds, sparksSpent: spent, callerId: userId }),
+      const res = await fetch(`${API}/api/calls/end`, {
+        method: 'POST', headers: await authHeaders(),
+        body: JSON.stringify({ callId }),
       })
+      const out = await res.json()
+      if (out?.success) { spent = out.sparks; finalSeconds = out.seconds }
     } catch (e) {}
     if (!navigating.current) {
       navigating.current = true
-      router.replace({ pathname: '/(main)/review/[id]', params: { id: id as string, duration: seconds, cost: spent, isHost: isHost || 'false', callId: callId || '' } })
+      router.replace({ pathname: '/(main)/review/[id]', params: { id: id as string, duration: finalSeconds, cost: spent, isHost: isHost || 'false', callId: callId || '' } })
     }
   }
 
@@ -376,7 +433,7 @@ const initCall = async () => {
     <View style={s.root}>
 
       {/* Full-screen WebView — no wrapper so HTML touch events work */}
-      {webUrl ? (
+      {webUrl && focused ? (
         <WebView
           ref={webViewRef}
           source={{ uri: webUrl }}
@@ -455,7 +512,7 @@ const initCall = async () => {
             {messages.map(msg => (
               <View key={msg.id} style={[s.msgRow]}>
                 <View style={[s.msgAv, msg.fromMe && s.msgAvMe]}><Text style={s.msgAvTxt}>{msg.fromMe ? 'M' : host?.name?.charAt(0)}</Text></View>
-                <View style={[s.msgBubble, msg.fromMe && s.msgBubbleMe]}>{(() => { try { const g = JSON.parse(msg.text); if (g.type === 'gift') return <View style={{alignItems:'center',gap:2}}><GiftIcon id={g.id} size={36}/><Text style={[s.msgTxt,{fontSize:10,color:C.gold}]}>?{g.cost}</Text></View> } catch(e){} return <Text style={s.msgTxt}>{msg.text}</Text> })()}</View>
+                <View style={[s.msgBubble, msg.fromMe && s.msgBubbleMe]}>{(() => { try { const g = JSON.parse(msg.text); if (g.type === 'gift_request') return renderReq(msg, g); if (g.type === 'gift') return <View style={{alignItems:'center',gap:2}}><GiftIcon id={g.id} size={36}/><Text style={[s.msgTxt,{fontSize:10,color:C.gold}]}>?{g.cost}</Text></View> } catch(e){} return <Text style={s.msgTxt}>{msg.text}</Text> })()}</View>
               </View>
             ))}
           </ScrollView>
@@ -544,7 +601,7 @@ const initCall = async () => {
                 <Text style={s.tierLabel}>{TIER_LABELS[tier]}</Text>
                 <View style={s.giftGrid}>
                   {tg.map((g: typeof GIFTS[0]) => {
-                    const can = credits >= g.cost
+                    const can = isHost === 'true' ? true : credits >= g.cost
                     return (
                       <TouchableOpacity key={g.id} onPress={() => can && sendGift(g)}
                         style={[s.giftItem, !can && { opacity: 0.3 }]}>
