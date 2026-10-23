@@ -45,3 +45,5 @@ app-example
 *.apk
 node_modules/
 .expo/
+
+*.bak*
