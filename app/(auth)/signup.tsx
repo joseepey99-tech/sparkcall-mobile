@@ -2,14 +2,27 @@ import { useState } from 'react'
 import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, KeyboardAvoidingView, Platform,
-  ScrollView, Alert, Pressable,
+  ScrollView, Alert, Pressable, Keyboard,
 } from 'react-native'
 import { useRouter } from 'expo-router'
 import { supabase } from '../../lib/supabase'
 import { C } from '../../lib/theme'
+import DateWheel from '../../components/DateWheel'
 
 const INTERESTS = ['Music','Travel','Fitness','Gaming','Cooking','Fashion','Art','Business','Tech','Sports']
 const REGIONS   = ['Africa','Asia','Europe','Americas','Middle East','Oceania']
+
+const isoDob = (s: string) => {
+  const m = s.trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
+  if (!m) return null
+  const d = new Date(+m[3], +m[2] - 1, +m[1])
+  if (d.getFullYear() !== +m[3] || d.getMonth() !== +m[2] - 1 || d.getDate() !== +m[1]) return null
+  const t = new Date()
+  let a = t.getFullYear() - d.getFullYear()
+  if (t.getMonth() < d.getMonth() || (t.getMonth() === d.getMonth() && t.getDate() < d.getDate())) a--
+  if (a < 18) return null
+  return `${m[3]}-${m[2]}-${m[1]}`
+}
 
 export default function Signup() {
   const router  = useRouter()
@@ -19,6 +32,7 @@ export default function Signup() {
   const [password, setPassword]     = useState('')
   const [gender, setGender]         = useState('')
   const [dob, setDob]               = useState('')
+  const [wheelOpen, setWheelOpen]   = useState(false)
   const [region, setRegion]         = useState('')
   const [interests, setInterests]   = useState<string[]>([])
   const [role, setRole]             = useState('')
@@ -31,17 +45,24 @@ export default function Signup() {
     if (step === 1 && (!name || !email || !password || !gender || !dob || !region)) {
       Alert.alert('Fill all fields'); return
     }
+    if (step === 1 && !isoDob(dob)) { Alert.alert('Invalid date of birth', 'Use DD/MM/YYYY. You must be 18 or older to use SparkCall.'); return }
     if (step === 2 && interests.length === 0) {
       Alert.alert('Select at least one interest'); return
     }
-    if (step === 3) { signup(); return }
+    if (step === 3) {
+      Alert.alert('Terms', 'I am 18 or older and I accept the Terms and Privacy Policy (sparkcall.vercel.app/terms).', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'I accept', onPress: () => signup() },
+      ])
+      return
+    }
     setStep(s => s + 1)
-    if (step === 1) setRole(gender === 'female' ? 'host' : 'caller')
+    if (step === 1) setRole('caller')
   }
 
   const signup = async () => {
     setLoading(true)
-    const { data, error } = await supabase.auth.signUp({ email, password, options: { data: { name, gender } } })
+    const { data, error } = await supabase.auth.signUp({ email, password, options: { data: { name, gender, birth_date: isoDob(dob), terms: 'true' } } })
     if (error) { Alert.alert('Error', error.message); setLoading(false); return }
     setLoading(false)
     Alert.alert('Welcome!', 'Check your email to confirm your account.')
@@ -59,7 +80,7 @@ export default function Signup() {
           ))}
         </View>
         <Text style={s.subtitle}>
-          {step === 1 ? 'Create your account' : step === 2 ? 'Your interests' : 'Your role'}
+          {step === 1 ? 'Create your account' : step === 2 ? 'Your interests' : 'How will you use SparkCall?'}
         </Text>
 
         {/* Step 1 — Info */}
@@ -75,7 +96,7 @@ export default function Signup() {
                 <Text style={s.label}>{f.label}</Text>
                 <TextInput
                   style={s.input} value={f.value} onChangeText={f.set}
-                  placeholder={f.placeholder} placeholderTextColor={C.muted}
+                  placeholder={f.placeholder} placeholderTextColor={C.muted} showSoftInputOnFocus={f.label !== 'Date of Birth'} onFocus={() => { if (f.label === 'Date of Birth') { Keyboard.dismiss(); setWheelOpen(true) } }}
                   secureTextEntry={f.secure} keyboardType={f.type}
                   autoCapitalize={f.secure || f.type ? 'none' : 'words'}
                   autoCorrect={false}
@@ -128,7 +149,7 @@ export default function Signup() {
               Based on your gender we pre-selected a role. You can change this anytime.
             </Text>
             {[
-              { r: 'host',   label: 'Host',   desc: 'Earn Sparks by taking calls. Set your own rate.' },
+              { r: 'host',   label: 'Host (by application)',   desc: 'Apply to become a host from Settings after signing up. Applications are reviewed.' },
               { r: 'caller', label: 'Caller', desc: 'Connect with amazing hosts. Pay per minute.' },
             ].map(({ r, label, desc }) => (
               <Pressable key={r} onPress={() => setRole(r)}
@@ -153,6 +174,7 @@ export default function Signup() {
           <Text style={s.link}>Already have an account? <Text style={{ color: C.rose }}>Sign in</Text></Text>
         </TouchableOpacity>
       </ScrollView>
+    <DateWheel visible={wheelOpen} value={dob} onClose={() => setWheelOpen(false)} onPick={(v: string) => { setDob(v); setWheelOpen(false) }} />
     </KeyboardAvoidingView>
   )
 }

@@ -349,7 +349,18 @@ export default function Settings() {
         {/* Account */}
         <View style={s.section}>
           <Text style={s.sectionTitle}>Account</Text>
-          {profile?.is_host && (
+          {profile && !profile.is_host && (
+          <TouchableOpacity style={s.actionRow} disabled={!!profile.host_requested_at}
+            onPress={async () => {
+              const { error } = await supabase.rpc('request_host')
+              if (error) { Alert.alert('Error', error.message); return }
+              setProfile((p: any) => ({ ...p, host_requested_at: new Date().toISOString() }))
+              Alert.alert('Request sent', 'We will review your host request.')
+            }}>
+            <Text style={s.actionTxt}>{profile.host_requested_at ? 'Host request sent, we will review it' : 'Become a host'}</Text>
+            <Text style={s.chevron}>›</Text>
+          </TouchableOpacity>
+          )} {profile?.is_host && (
           <TouchableOpacity style={s.actionRow} onPress={() => router.push('/(main)/earnings' as any)}>
             <Text style={s.actionTxt}>Earnings and payouts</Text>
             <Text style={s.chevron}>›</Text>
